@@ -3,6 +3,10 @@ import Link from "next/link";
 export const metadata = {
   title: "Gemini Academy · Unhas",
   description: "Pendaftaran Gemini Academy Universitas Hasanuddin",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 export default function Layout({ children }) {
   return (

@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+
 const date = (s) =>
   new Date(s.replace(" ", "T") + "Z").toLocaleString("id-ID", {
     timeZone: "Asia/Makassar",
   });
+
 export default function Dashboard() {
   const [d, setD] = useState(null),
     [units, setUnits] = useState([]),
@@ -16,7 +18,25 @@ export default function Dashboard() {
     [query, setQuery] = useState(""),
     [detail, setDetail] = useState(null),
     [editModal, setEditModal] = useState(null),
-    [editBusy, setEditBusy] = useState(false);
+    [editBusy, setEditBusy] = useState(false),
+    [editUnitModal, setEditUnitModal] = useState(null),
+    [editUnitBusy, setEditUnitBusy] = useState(false),
+    [confirmModal, setConfirmModal] = useState(null),
+    [confirmBusy, setConfirmBusy] = useState(false);
+
+  // Tangani tombol ESC untuk menutup dialog yang sedang terbuka
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        if (confirmModal && !confirmBusy) setConfirmModal(null);
+        else if (editUnitModal && !editUnitBusy) setEditUnitModal(null);
+        else if (editModal && !editBusy) setEditModal(null);
+        else if (detail) setDetail(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [confirmModal, confirmBusy, editUnitModal, editUnitBusy, editModal, editBusy, detail]);
 
   async function load(q = "") {
     setError("");
@@ -97,23 +117,73 @@ export default function Dashboard() {
     }
   }
 
-  async function deleteUnit(id, name) {
-    if (!confirm(`Hapus unit kerja "${name}"?`)) return;
+  function startEditUnit(u) {
+    setEditUnitModal({
+      id: u.id,
+      name: u.name,
+      max_quota: u.max_quota,
+      used: u.used,
+    });
+    setError("");
+    setUnitMsg("");
+  }
+
+  async function saveEditUnit(e) {
+    e.preventDefault();
+    setEditUnitBusy(true);
     setError("");
     setUnitMsg("");
     try {
-      const r = await fetch("/api/units/delete", {
+      const r = await fetch("/api/units/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({
+          id: editUnitModal.id,
+          name: editUnitModal.name,
+          max_quota: Number(editUnitModal.max_quota),
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw Error(j.error);
       setUnits(j.units);
-      setUnitMsg(`Unit kerja "${name}" berhasil dihapus.`);
-    } catch (e) {
-      setError(e.message);
+      setUnitMsg(j.message || "Unit kerja berhasil diperbarui.");
+      setEditUnitModal(null);
+      load(query);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEditUnitBusy(false);
     }
+  }
+
+  function askDeleteUnit(id, name) {
+    setConfirmModal({
+      title: "Hapus Unit Kerja?",
+      message: `Apakah Anda yakin ingin menghapus unit kerja "${name}"? Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: "Ya, Hapus Unit",
+      danger: true,
+      action: async () => {
+        setConfirmBusy(true);
+        setError("");
+        setUnitMsg("");
+        try {
+          const r = await fetch("/api/units/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw Error(j.error);
+          setUnits(j.units);
+          setUnitMsg(`Unit kerja "${name}" berhasil dihapus.`);
+          setConfirmModal(null);
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setConfirmBusy(false);
+        }
+      },
+    });
   }
 
   function startEdit(p) {
@@ -159,24 +229,34 @@ export default function Dashboard() {
     }
   }
 
-  async function deleteParticipant(id, name) {
-    if (!confirm(`Hapus peserta "${name}"? Kuota sesi akan otomatis dikembalikan.`))
-      return;
-    setError("");
-    setUnitMsg("");
-    try {
-      const r = await fetch(`/api/participants/${id}/delete`, {
-        method: "POST",
-      });
-      const j = await r.json();
-      if (!r.ok) throw Error(j.error);
-      setUnitMsg(j.message || `Peserta "${name}" berhasil dihapus.`);
-      if (detail && detail.id === id) setDetail(null);
-      if (editModal && editModal.id === id) setEditModal(null);
-      load(query);
-    } catch (err) {
-      setError(err.message);
-    }
+  function askDeleteParticipant(id, name) {
+    setConfirmModal({
+      title: "Hapus Peserta?",
+      message: `Apakah Anda yakin ingin menghapus peserta "${name}"? Kuota yang sebelumnya digunakan oleh peserta ini akan otomatis dikembalikan ke kuota sesi terkait.`,
+      confirmText: "Ya, Hapus Peserta",
+      danger: true,
+      action: async () => {
+        setConfirmBusy(true);
+        setError("");
+        setUnitMsg("");
+        try {
+          const r = await fetch(`/api/participants/${id}/delete`, {
+            method: "POST",
+          });
+          const j = await r.json();
+          if (!r.ok) throw Error(j.error);
+          setUnitMsg(j.message || `Peserta "${name}" berhasil dihapus.`);
+          if (detail && detail.id === id) setDetail(null);
+          if (editModal && editModal.id === id) setEditModal(null);
+          setConfirmModal(null);
+          load(query);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setConfirmBusy(false);
+        }
+      },
+    });
   }
 
   return (
@@ -232,278 +312,446 @@ export default function Dashboard() {
         </p>
       )}
 
+      {/* DIALOG DETAIL PESERTA */}
       {detail && (
-        <section className="card detail-card">
-          <button onClick={() => setDetail(null)}>Tutup detail</button>
-          <h2>{detail.name}</h2>
-          <dl>
-            {Object.entries({
-              NIP: detail.nip,
-              "Unit Kerja": detail.unit,
-              "Kategori Profesi": detail.profession || "-",
-              "Status Kepegawaian": detail.employment_status || "-",
-              WhatsApp: detail.phone,
-              Email: detail.email || "Belum memiliki",
-              Sesi:
-                detail.session +
-                " · " +
-                detail.starts_at +
-                "–" +
-                detail.ends_at +
-                " WITA",
-              "Terdaftar (WITA)": date(detail.created_at),
-              Kode: detail.registration_code,
-            }).map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-            {detail.letter_file && (
+        <div className="dialog-overlay" onClick={() => setDetail(null)}>
+          <div className="dialog-box" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header">
               <div>
-                <dt>Surat Usulan Pimpinan Unit Kerja</dt>
-                <dd>
-                  <a
-                    href={`/api/participants/${detail.id}/letter`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="button secondary"
-                    style={{
-                      display: "inline-block",
-                      marginTop: "6px",
-                      padding: "8px 14px",
-                    }}
-                  >
-                    Buka / Unduh Surat Usulan ↗
-                  </a>
-                </dd>
+                <div className="eyebrow">DETAIL PESERTA TERDAFTAR</div>
+                <h2>{detail.name}</h2>
               </div>
-            )}
-          </dl>
-          <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-            <button type="button" onClick={() => startEdit(detail)}>
-              Edit Data Peserta ✎
-            </button>
-            <button
-              type="button"
-              onClick={() => deleteParticipant(detail.id, detail.name)}
-              style={{
-                background: "#fff0f0",
-                color: "#c53030",
-                border: "1px solid #f0d2d2",
-              }}
+              <button
+                type="button"
+                className="dialog-close"
+                onClick={() => setDetail(null)}
+                title="Tutup dialog (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            <dl>
+              {Object.entries({
+                "Nama Lengkap": detail.name,
+                NIP: detail.nip,
+                "Unit Kerja": detail.unit,
+                "Kategori Profesi": detail.profession || "-",
+                "Status Kepegawaian": detail.employment_status || "-",
+                "Nomor WhatsApp": detail.phone,
+                "Email Unhas": detail.email || "Belum memiliki",
+                Sesi:
+                  detail.session +
+                  " · " +
+                  detail.starts_at +
+                  "–" +
+                  detail.ends_at +
+                  " WITA",
+                "Terdaftar (WITA)": date(detail.created_at),
+                "Kode Pendaftaran": detail.registration_code,
+              }).map(([k, v]) => (
+                <div key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+              {detail.letter_file && (
+                <div>
+                  <dt>Surat Usulan Pimpinan Unit Kerja</dt>
+                  <dd>
+                    <a
+                      href={`/api/participants/${detail.id}/letter`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="button secondary"
+                      style={{
+                        display: "inline-block",
+                        marginTop: "6px",
+                        padding: "8px 14px",
+                      }}
+                    >
+                      Buka / Unduh Surat Usulan ↗
+                    </a>
+                  </dd>
+                </div>
+              )}
+            </dl>
+
+            <div
+              className="dialog-actions"
+              style={{ justifyContent: "space-between", flexWrap: "wrap" }}
             >
-              Hapus Peserta ✕
-            </button>
+              <button
+                type="button"
+                onClick={() => askDeleteParticipant(detail.id, detail.name)}
+                style={{
+                  background: "#fff0f0",
+                  color: "#c53030",
+                  border: "1px solid #f0d2d2",
+                }}
+              >
+                Hapus Peserta ✕
+              </button>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setDetail(null)}
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    startEdit(detail);
+                    setDetail(null);
+                  }}
+                >
+                  Edit Data Peserta ✎
+                </button>
+              </div>
+            </div>
           </div>
-        </section>
+        </div>
       )}
 
+      {/* DIALOG EDIT PESERTA */}
       {editModal && (
-        <section
-          className="card detail-card"
-          style={{ maxWidth: "680px", marginBottom: "30px" }}
+        <div
+          className="dialog-overlay"
+          onClick={() => !editBusy && setEditModal(null)}
         >
           <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "10px",
-            }}
+            className="dialog-box modal-lg"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="eyebrow">EDIT DATA PESERTA</div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setEditModal(null)}
-              style={{ padding: "6px 12px", fontSize: "11px" }}
-            >
-              Tutup ✕
-            </button>
-          </div>
-          <h2>Edit Peserta: {editModal.name}</h2>
-          <p className="muted">
-            Perbarui informasi data peserta atau pindahkan pilihan sesi.
-          </p>
-          <form onSubmit={saveEdit}>
-            <label>
-              Nama Lengkap *
-              <input
-                name="name"
-                required
-                minLength={2}
-                maxLength={150}
-                value={editModal.name}
-                onChange={(e) =>
-                  setEditModal({ ...editModal, name: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              NIP * (18 digit angka)
-              <input
-                name="nip"
-                required
-                pattern="[0-9]{18}"
-                maxLength={18}
-                inputMode="numeric"
-                value={editModal.nip}
-                onChange={(e) =>
-                  setEditModal({ ...editModal, nip: e.target.value })
-                }
-              />
-            </label>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "15px",
-              }}
-            >
-              <label>
-                Unit Kerja *
-                <select
-                  name="unit"
-                  required
-                  value={editModal.unit}
-                  onChange={(e) =>
-                    setEditModal({ ...editModal, unit: e.target.value })
-                  }
-                >
-                  <option value="">Pilih unit kerja</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.name}>
-                      {u.name}
-                    </option>
-                  ))}
-                  {!units.some((u) => u.name === editModal.unit) && (
-                    <option value={editModal.unit}>{editModal.unit}</option>
-                  )}
-                </select>
-              </label>
-              <label>
-                Pilihan Sesi *
-                <select
-                  name="academy_session_id"
-                  required
-                  value={editModal.academy_session_id}
-                  onChange={(e) =>
-                    setEditModal({
-                      ...editModal,
-                      academy_session_id: e.target.value,
-                    })
-                  }
-                >
-                  {d?.sessions?.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.starts_at}–{s.ends_at} WITA)
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "15px",
-              }}
-            >
-              <label>
-                Kategori Profesi *
-                <select
-                  name="profession"
-                  required
-                  value={editModal.profession}
-                  onChange={(e) =>
-                    setEditModal({ ...editModal, profession: e.target.value })
-                  }
-                >
-                  <option value="Dosen">Dosen</option>
-                  <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
-                </select>
-              </label>
-              <label>
-                Status Kepegawaian *
-                <select
-                  name="employment_status"
-                  required
-                  value={editModal.employment_status}
-                  onChange={(e) =>
-                    setEditModal({
-                      ...editModal,
-                      employment_status: e.target.value,
-                    })
-                  }
-                >
-                  <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
-                  <option value="NPT">NPT (Non-PNS Tetap)</option>
-                  <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
-                </select>
-              </label>
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "15px",
-              }}
-            >
-              <label>
-                Nomor WhatsApp *
-                <input
-                  name="phone"
-                  required
-                  maxLength={20}
-                  value={editModal.phone}
-                  onChange={(e) =>
-                    setEditModal({ ...editModal, phone: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Email Unhas (Opsional)
-                <input
-                  name="email"
-                  type="email"
-                  maxLength={200}
-                  value={editModal.email}
-                  onChange={(e) =>
-                    setEditModal({ ...editModal, email: e.target.value })
-                  }
-                />
-              </label>
-            </div>
-            <label>
-              Ganti Berkas Surat Usulan (Format PDF, Maks 5 MB)
-              <input
-                type="file"
-                name="letter"
-                accept=".pdf,application/pdf"
-              />
-              <small>
-                {editModal.letter_file
-                  ? `Berkas tersimpan saat ini: ${editModal.letter_file}. Biarkan kosong jika tidak ingin mengubah berkas.`
-                  : "Belum ada berkas terunggah. Pilih file PDF untuk mengunggah berkas baru."}
-              </small>
-            </label>
-            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-              <button type="submit" disabled={editBusy}>
-                {editBusy ? "Menyimpan perubahan…" : "Simpan Perubahan ↗"}
+            <div className="dialog-header">
+              <div>
+                <div className="eyebrow">EDIT DATA PESERTA</div>
+                <h2>Edit: {editModal.name}</h2>
+              </div>
+              <button
+                type="button"
+                className="dialog-close"
+                onClick={() => setEditModal(null)}
+                disabled={editBusy}
+                title="Tutup dialog (Esc)"
+              >
+                ✕
               </button>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Perbarui informasi pendaftaran atau pindahkan pilihan sesi peserta.
+            </p>
+            <form onSubmit={saveEdit}>
+              <label>
+                Nama Lengkap *
+                <input
+                  name="name"
+                  required
+                  minLength={2}
+                  maxLength={150}
+                  value={editModal.name}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                NIP * (18 digit angka)
+                <input
+                  name="nip"
+                  required
+                  pattern="[0-9]{18}"
+                  maxLength={18}
+                  inputMode="numeric"
+                  value={editModal.nip}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, nip: e.target.value })
+                  }
+                />
+              </label>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "15px",
+                }}
+              >
+                <label>
+                  Unit Kerja *
+                  <select
+                    name="unit"
+                    required
+                    value={editModal.unit}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, unit: e.target.value })
+                    }
+                  >
+                    <option value="">Pilih unit kerja</option>
+                    {units.map((u) => (
+                      <option key={u.id} value={u.name}>
+                        {u.name}
+                      </option>
+                    ))}
+                    {!units.some((u) => u.name === editModal.unit) && (
+                      <option value={editModal.unit}>{editModal.unit}</option>
+                    )}
+                  </select>
+                </label>
+                <label>
+                  Pilihan Sesi *
+                  <select
+                    name="academy_session_id"
+                    required
+                    value={editModal.academy_session_id}
+                    onChange={(e) =>
+                      setEditModal({
+                        ...editModal,
+                        academy_session_id: e.target.value,
+                      })
+                    }
+                  >
+                    {d?.sessions?.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.starts_at}–{s.ends_at} WITA)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "15px",
+                }}
+              >
+                <label>
+                  Kategori Profesi *
+                  <select
+                    name="profession"
+                    required
+                    value={editModal.profession}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, profession: e.target.value })
+                    }
+                  >
+                    <option value="Dosen">Dosen</option>
+                    <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
+                  </select>
+                </label>
+                <label>
+                  Status Kepegawaian *
+                  <select
+                    name="employment_status"
+                    required
+                    value={editModal.employment_status}
+                    onChange={(e) =>
+                      setEditModal({
+                        ...editModal,
+                        employment_status: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
+                    <option value="NPT">NPT (Non-PNS Tetap)</option>
+                    <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
+                  </select>
+                </label>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "15px",
+                }}
+              >
+                <label>
+                  Nomor WhatsApp *
+                  <input
+                    name="phone"
+                    required
+                    maxLength={20}
+                    value={editModal.phone}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, phone: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Email Unhas (Opsional)
+                  <input
+                    name="email"
+                    type="email"
+                    maxLength={200}
+                    value={editModal.email}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, email: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                Ganti Berkas Surat Usulan (Format PDF, Maks 5 MB)
+                <input
+                  type="file"
+                  name="letter"
+                  accept=".pdf,application/pdf"
+                />
+                <small>
+                  {editModal.letter_file
+                    ? `Berkas tersimpan saat ini: ${editModal.letter_file}. Biarkan kosong jika tidak ingin mengubah berkas.`
+                    : "Belum ada berkas terunggah. Pilih file PDF untuk mengunggah berkas baru."}
+                </small>
+              </label>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setEditModal(null)}
+                  disabled={editBusy}
+                >
+                  Batal
+                </button>
+                <button type="submit" disabled={editBusy}>
+                  {editBusy ? "Menyimpan perubahan…" : "Simpan Perubahan ↗"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG EDIT UNIT KERJA */}
+      {editUnitModal && (
+        <div
+          className="dialog-overlay"
+          onClick={() => !editUnitBusy && setEditUnitModal(null)}
+        >
+          <div className="dialog-box" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header">
+              <div>
+                <div className="eyebrow">KELOLA UNIT KERJA</div>
+                <h2>Edit Unit Kerja & Kuota</h2>
+              </div>
+              <button
+                type="button"
+                className="dialog-close"
+                onClick={() => setEditUnitModal(null)}
+                disabled={editUnitBusy}
+                title="Tutup dialog (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Perbarui nama unit kerja atau batas maksimal kuota usulan.
+            </p>
+            <form onSubmit={saveEditUnit}>
+              <label>
+                Nama Unit Kerja / Fakultas *
+                <input
+                  required
+                  maxLength={200}
+                  value={editUnitModal.name}
+                  onChange={(e) =>
+                    setEditUnitModal({ ...editUnitModal, name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Batas Maksimal Kuota Peserta *
+                <input
+                  type="number"
+                  required
+                  min={editUnitModal.used || 1}
+                  max={1000}
+                  value={editUnitModal.max_quota}
+                  onChange={(e) =>
+                    setEditUnitModal({
+                      ...editUnitModal,
+                      max_quota: e.target.value,
+                    })
+                  }
+                />
+                <small>
+                  Jumlah peserta terdaftar saat ini: <b>{editUnitModal.used}</b> orang. Kuota tidak boleh lebih kecil dari jumlah peserta terdaftar.
+                </small>
+              </label>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setEditUnitModal(null)}
+                  disabled={editUnitBusy}
+                >
+                  Batal
+                </button>
+                <button type="submit" disabled={editUnitBusy}>
+                  {editUnitBusy ? "Menyimpan…" : "Simpan Perubahan ↗"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION DIALOG (MODAL PENGGANTI ALERT/CONFIRM) */}
+      {confirmModal && (
+        <div
+          className="dialog-overlay"
+          onClick={() => !confirmBusy && setConfirmModal(null)}
+        >
+          <div
+            className="dialog-box confirm-box"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="confirm-icon confirm-icon-danger">⚠️</div>
+            <h2 style={{ fontSize: "20px", marginTop: 0, marginBottom: "10px" }}>
+              {confirmModal.title}
+            </h2>
+            <p
+              style={{
+                color: "#64748b",
+                fontSize: "13px",
+                lineHeight: 1.6,
+                marginBottom: "24px",
+              }}
+            >
+              {confirmModal.message}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                justifyContent: "center",
+              }}
+            >
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setEditModal(null)}
+                onClick={() => setConfirmModal(null)}
+                disabled={confirmBusy}
               >
                 Batal
               </button>
+              <button
+                type="button"
+                className="button-danger"
+                onClick={confirmModal.action}
+                disabled={confirmBusy}
+              >
+                {confirmBusy
+                  ? "Memproses…"
+                  : confirmModal.confirmText || "Hapus"}
+              </button>
             </div>
-          </form>
-        </section>
+          </div>
+        </div>
       )}
 
+      {/* KONTEN TAB */}
       {tab === "units" ? (
         <div style={{ display: "grid", gap: "25px" }}>
           <section className="card">
@@ -600,13 +848,24 @@ export default function Dashboard() {
                               u.remaining > 0 ? "#2f855a" : "#c53030",
                           }}
                         >
-                          {u.remaining > 0 ? "Tersedia" : "Penuh (Maks 20)"}
+                          {u.remaining > 0 ? "Tersedia" : "Penuh (Maks Kuota)"}
                         </span>
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         <button
                           className="secondary"
-                          onClick={() => deleteUnit(u.id, u.name)}
+                          onClick={() => startEditUnit(u)}
+                          style={{
+                            padding: "6px 12px",
+                            fontSize: "11px",
+                            marginRight: "6px",
+                          }}
+                        >
+                          Edit ✎
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => askDeleteUnit(u.id, u.name)}
                           disabled={u.used > 0}
                           title={
                             u.used > 0
@@ -620,7 +879,7 @@ export default function Dashboard() {
                             fontSize: "11px",
                           }}
                         >
-                          Hapus
+                          Hapus ✕
                         </button>
                       </td>
                     </tr>
@@ -788,7 +1047,7 @@ export default function Dashboard() {
                           Edit ✎
                         </button>
                         <button
-                          onClick={() => deleteParticipant(p.id, p.name)}
+                          onClick={() => askDeleteParticipant(p.id, p.name)}
                           style={{
                             padding: "5px 9px",
                             fontSize: "11px",
@@ -831,4 +1090,3 @@ export default function Dashboard() {
     </>
   );
 }
-

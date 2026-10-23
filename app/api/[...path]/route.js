@@ -329,6 +329,114 @@ async function route(req, ctx) {
       }
     }
     if (
+      ((req.method === "POST" || req.method === "PUT") &&
+        (key === "units/edit" || key === "units/update")) ||
+      ((req.method === "POST" || req.method === "PUT") &&
+        routeSegments.length === 3 &&
+        routeSegments[0] === "units" &&
+        (routeSegments[2] === "edit" || routeSegments[2] === "update"))
+    ) {
+      let id;
+      let body;
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+      if (routeSegments.length === 3) {
+        id = Number(routeSegments[1]);
+      } else {
+        id = Number(body.id);
+      }
+      if (!Number.isSafeInteger(id) || id < 1)
+        return json({ error: "ID unit kerja tidak valid." }, 422);
+
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const maxQuota = Number(body.max_quota);
+
+      if (!name || name.length > 200)
+        return json(
+          { error: "Nama unit kerja wajib diisi (maksimal 200 karakter)." },
+          422
+        );
+      if (!Number.isSafeInteger(maxQuota) || maxQuota < 1 || maxQuota > 1000)
+        return json(
+          { error: "Batas kuota harus bernilai antara 1 dan 1000." },
+          422
+        );
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [existing] = await conn.execute(
+          "SELECT id, name, max_quota FROM work_units WHERE id = ? FOR UPDATE",
+          [id]
+        );
+        if (!existing.length) {
+          await conn.rollback();
+          return json({ error: "Unit kerja tidak ditemukan." }, 404);
+        }
+        const oldUnit = existing[0];
+
+        if (oldUnit.name !== name) {
+          const [duplicate] = await conn.execute(
+            "SELECT id FROM work_units WHERE name = ? AND id != ?",
+            [name, id]
+          );
+          if (duplicate.length) {
+            await conn.rollback();
+            return json(
+              { error: `Unit kerja dengan nama "${name}" sudah terdaftar.` },
+              409
+            );
+          }
+        }
+
+        const [[usedCount]] = await conn.execute(
+          "SELECT COUNT(*) AS total FROM participants WHERE unit = ?",
+          [oldUnit.name]
+        );
+
+        if (maxQuota < usedCount.total) {
+          await conn.rollback();
+          return json(
+            {
+              error: `Batas kuota (${maxQuota}) tidak boleh lebih kecil dari jumlah peserta yang sudah terdaftar (${usedCount.total} orang).`,
+            },
+            422
+          );
+        }
+
+        await conn.execute(
+          "UPDATE work_units SET name = ?, max_quota = ? WHERE id = ?",
+          [name, maxQuota, id]
+        );
+
+        if (oldUnit.name !== name) {
+          await conn.execute(
+            "UPDATE participants SET unit = ? WHERE unit = ?",
+            [name, oldUnit.name]
+          );
+        }
+
+        await conn.commit();
+        return json({
+          ok: true,
+          message: `Unit kerja "${name}" berhasil diperbarui.`,
+          units: await workUnits(),
+        });
+      } catch (e) {
+        try {
+          await conn.rollback();
+        } catch {}
+        if (e.code === "ER_DUP_ENTRY")
+          return json({ error: "Unit kerja ini sudah terdaftar." }, 409);
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+    if (
       (req.method === "DELETE" && key.startsWith("units/")) ||
       (req.method === "POST" && key === "units/delete")
     ) {
