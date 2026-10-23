@@ -124,9 +124,9 @@ async function route(req, ctx) {
         }
         const origName = letterFile.name || "";
         const ext = nodePath.extname(origName).toLowerCase();
-        const allowedExts = [".pdf", ".jpg", ".jpeg", ".png"];
+        const allowedExts = [".pdf"];
         if (!allowedExts.includes(ext)) {
-          errors.push("Format surat usulan harus berupa file PDF, JPG, atau PNG.");
+          errors.push("Format surat usulan harus berupa file PDF.");
         } else {
           savedFileName = `${randomUUID()}${ext}`;
           bufferToSave = Buffer.from(await letterFile.arrayBuffer());
@@ -378,6 +378,242 @@ async function route(req, ctx) {
         ? json(r[0])
         : json({ error: "Peserta tidak ditemukan." }, 404);
     }
+    if (
+      (req.method === "DELETE" &&
+        routeSegments.length === 2 &&
+        routeSegments[0] === "participants") ||
+      (req.method === "POST" &&
+        routeSegments.length === 3 &&
+        routeSegments[0] === "participants" &&
+        routeSegments[2] === "delete") ||
+      (req.method === "POST" && key === "participants/delete")
+    ) {
+      let id;
+      if (
+        key === "participants/delete" ||
+        (req.method === "POST" && routeSegments.length === 2)
+      ) {
+        const b = await req.json();
+        id = Number(b.id);
+      } else {
+        id = Number(routeSegments[1]);
+      }
+      if (!Number.isSafeInteger(id) || id < 1)
+        return json({ error: "ID peserta tidak valid." }, 422);
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [rows] = await conn.execute(
+          "SELECT id, name, academy_session_id, letter_file FROM participants WHERE id = ? FOR UPDATE",
+          [id]
+        );
+        if (!rows.length) {
+          await conn.rollback();
+          return json({ error: "Peserta tidak ditemukan." }, 404);
+        }
+        const p = rows[0];
+
+        await conn.execute(
+          "UPDATE academy_sessions SET reserved = GREATEST(reserved - 1, 0) WHERE id = ?",
+          [p.academy_session_id]
+        );
+        await conn.execute("DELETE FROM participants WHERE id = ?", [id]);
+        await conn.commit();
+
+        if (p.letter_file) {
+          try {
+            await unlink(
+              nodePath.join(process.cwd(), "uploads", "letters", p.letter_file)
+            );
+          } catch {}
+        }
+        return json({
+          ok: true,
+          message: `Peserta "${p.name}" berhasil dihapus.`,
+        });
+      } catch (e) {
+        try {
+          await conn.rollback();
+        } catch {}
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+    if (
+      (req.method === "PUT" &&
+        routeSegments.length === 2 &&
+        routeSegments[0] === "participants") ||
+      (req.method === "POST" &&
+        routeSegments.length === 3 &&
+        routeSegments[0] === "participants" &&
+        (routeSegments[2] === "edit" || routeSegments[2] === "update"))
+    ) {
+      const id = Number(routeSegments[1]);
+      if (!Number.isSafeInteger(id) || id < 1)
+        return json({ error: "ID peserta tidak valid." }, 422);
+
+      let bodyData = {};
+      let letterFile = null;
+      const contentType = req.headers.get("content-type") || "";
+
+      if (contentType.includes("multipart/form-data")) {
+        const formData = await req.formData();
+        for (const [k, v] of formData.entries()) {
+          if (k === "letter") {
+            letterFile = v;
+          } else {
+            bodyData[k] = v;
+          }
+        }
+      } else {
+        bodyData = await req.json();
+        if (bodyData.letter) {
+          letterFile = bodyData.letter;
+        }
+      }
+
+      const { data: d, errors } = validate(bodyData);
+
+      let savedFileName = null;
+      let bufferToSave = null;
+
+      if (
+        letterFile &&
+        typeof letterFile === "object" &&
+        typeof letterFile.arrayBuffer === "function" &&
+        letterFile.size > 0
+      ) {
+        if (letterFile.size > 5 * 1024 * 1024) {
+          errors.push("Ukuran surat usulan pimpinan unit kerja maksimal 5 MB.");
+        }
+        const origName = letterFile.name || "";
+        const ext = nodePath.extname(origName).toLowerCase();
+        if (ext !== ".pdf") {
+          errors.push("Format surat usulan harus berupa file PDF.");
+        } else {
+          savedFileName = `${randomUUID()}${ext}`;
+          bufferToSave = Buffer.from(await letterFile.arrayBuffer());
+        }
+      }
+
+      if (errors.length) return json({ error: errors.join(" ") }, 422);
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [existingRows] = await conn.execute(
+          "SELECT * FROM participants WHERE id = ? FOR UPDATE",
+          [id]
+        );
+        if (!existingRows.length) {
+          await conn.rollback();
+          return json({ error: "Peserta tidak ditemukan." }, 404);
+        }
+        const oldP = existingRows[0];
+
+        if (Number(oldP.academy_session_id) !== Number(d.academy_session_id)) {
+          const [taken] = await conn.execute(
+            "UPDATE academy_sessions SET reserved = reserved + 1 WHERE id = ? AND reserved < capacity",
+            [d.academy_session_id]
+          );
+          if (taken.affectedRows !== 1) {
+            await conn.rollback();
+            return json(
+              { error: "Sesi tujuan sudah penuh atau tidak tersedia." },
+              409
+            );
+          }
+          await conn.execute(
+            "UPDATE academy_sessions SET reserved = GREATEST(reserved - 1, 0) WHERE id = ?",
+            [oldP.academy_session_id]
+          );
+        }
+
+        if (oldP.unit !== d.unit) {
+          const [unitRows] = await conn.execute(
+            "SELECT id, name, max_quota FROM work_units WHERE name = ? FOR UPDATE",
+            [d.unit]
+          );
+          if (unitRows.length > 0) {
+            const [[countRow]] = await conn.execute(
+              "SELECT COUNT(*) AS used FROM participants WHERE unit = ? AND id != ?",
+              [d.unit, id]
+            );
+            if (countRow.used >= unitRows[0].max_quota) {
+              await conn.rollback();
+              return json(
+                {
+                  error: `Kuota untuk ${d.unit} sudah penuh (maksimal ${unitRows[0].max_quota} peserta).`,
+                },
+                409
+              );
+            }
+          }
+        }
+
+        let finalLetter = oldP.letter_file;
+        if (bufferToSave && savedFileName) {
+          const uploadDir = nodePath.join(process.cwd(), "uploads", "letters");
+          await mkdir(uploadDir, { recursive: true });
+          await writeFile(nodePath.join(uploadDir, savedFileName), bufferToSave);
+          finalLetter = savedFileName;
+        }
+
+        await conn.execute(
+          "UPDATE participants SET name = ?, nip = ?, unit = ?, phone = ?, email = ?, profession = ?, employment_status = ?, letter_file = ?, academy_session_id = ? WHERE id = ?",
+          [
+            d.name,
+            d.nip,
+            d.unit,
+            d.phone,
+            d.email || null,
+            d.profession,
+            d.employment_status,
+            finalLetter,
+            d.academy_session_id,
+            id,
+          ]
+        );
+
+        await conn.commit();
+
+        if (
+          bufferToSave &&
+          savedFileName &&
+          oldP.letter_file &&
+          oldP.letter_file !== savedFileName
+        ) {
+          try {
+            await unlink(
+              nodePath.join(process.cwd(), "uploads", "letters", oldP.letter_file)
+            );
+          } catch {}
+        }
+
+        return json({ ok: true, message: "Data peserta berhasil diperbarui." });
+      } catch (e) {
+        try {
+          await conn.rollback();
+        } catch {}
+        if (bufferToSave && savedFileName) {
+          try {
+            await unlink(
+              nodePath.join(process.cwd(), "uploads", "letters", savedFileName)
+            );
+          } catch {}
+        }
+        if (e.code === "ER_DUP_ENTRY")
+          return json(
+            { error: "NIP ini sudah terdaftar pada peserta lain." },
+            409
+          );
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
     if (req.method === "GET" && (key === "participants" || key === "export")) {
       const q = (url.searchParams.get("q") || "").trim();
       const sid = url.searchParams.get("session");
@@ -457,3 +693,5 @@ async function route(req, ctx) {
 }
 export const GET = route;
 export const POST = route;
+export const PUT = route;
+export const DELETE = route;

@@ -14,7 +14,9 @@ export default function Dashboard() {
     [unitQuota, setUnitQuota] = useState(20),
     [unitBusy, setUnitBusy] = useState(false),
     [query, setQuery] = useState(""),
-    [detail, setDetail] = useState(null);
+    [detail, setDetail] = useState(null),
+    [editModal, setEditModal] = useState(null),
+    [editBusy, setEditBusy] = useState(false);
 
   async function load(q = "") {
     setError("");
@@ -111,6 +113,69 @@ export default function Dashboard() {
       setUnitMsg(`Unit kerja "${name}" berhasil dihapus.`);
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  function startEdit(p) {
+    setEditModal({
+      id: p.id,
+      name: p.name,
+      nip: p.nip,
+      unit: p.unit,
+      profession: p.profession || "Dosen",
+      employment_status: p.employment_status || "PNS",
+      phone: p.phone,
+      email: p.email || "",
+      academy_session_id: p.academy_session_id,
+      letter_file: p.letter_file || "",
+    });
+    setError("");
+    setUnitMsg("");
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setEditBusy(true);
+    setError("");
+    setUnitMsg("");
+    try {
+      const formData = new FormData(e.currentTarget);
+      const r = await fetch(`/api/participants/${editModal.id}/edit`, {
+        method: "POST",
+        body: formData,
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+      setUnitMsg(j.message || "Data peserta berhasil diperbarui.");
+      setEditModal(null);
+      load(query);
+      if (detail && detail.id === editModal.id) {
+        show(editModal.id);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function deleteParticipant(id, name) {
+    if (!confirm(`Hapus peserta "${name}"? Kuota sesi akan otomatis dikembalikan.`))
+      return;
+    setError("");
+    setUnitMsg("");
+    try {
+      const r = await fetch(`/api/participants/${id}/delete`, {
+        method: "POST",
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+      setUnitMsg(j.message || `Peserta "${name}" berhasil dihapus.`);
+      if (detail && detail.id === id) setDetail(null);
+      if (editModal && editModal.id === id) setEditModal(null);
+      load(query);
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -215,6 +280,227 @@ export default function Dashboard() {
               </div>
             )}
           </dl>
+          <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+            <button type="button" onClick={() => startEdit(detail)}>
+              Edit Data Peserta ✎
+            </button>
+            <button
+              type="button"
+              onClick={() => deleteParticipant(detail.id, detail.name)}
+              style={{
+                background: "#fff0f0",
+                color: "#c53030",
+                border: "1px solid #f0d2d2",
+              }}
+            >
+              Hapus Peserta ✕
+            </button>
+          </div>
+        </section>
+      )}
+
+      {editModal && (
+        <section
+          className="card detail-card"
+          style={{ maxWidth: "680px", marginBottom: "30px" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px",
+            }}
+          >
+            <div className="eyebrow">EDIT DATA PESERTA</div>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setEditModal(null)}
+              style={{ padding: "6px 12px", fontSize: "11px" }}
+            >
+              Tutup ✕
+            </button>
+          </div>
+          <h2>Edit Peserta: {editModal.name}</h2>
+          <p className="muted">
+            Perbarui informasi data peserta atau pindahkan pilihan sesi.
+          </p>
+          <form onSubmit={saveEdit}>
+            <label>
+              Nama Lengkap *
+              <input
+                name="name"
+                required
+                minLength={2}
+                maxLength={150}
+                value={editModal.name}
+                onChange={(e) =>
+                  setEditModal({ ...editModal, name: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              NIP * (18 digit angka)
+              <input
+                name="nip"
+                required
+                pattern="[0-9]{18}"
+                maxLength={18}
+                inputMode="numeric"
+                value={editModal.nip}
+                onChange={(e) =>
+                  setEditModal({ ...editModal, nip: e.target.value })
+                }
+              />
+            </label>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "15px",
+              }}
+            >
+              <label>
+                Unit Kerja *
+                <select
+                  name="unit"
+                  required
+                  value={editModal.unit}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, unit: e.target.value })
+                  }
+                >
+                  <option value="">Pilih unit kerja</option>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.name}>
+                      {u.name}
+                    </option>
+                  ))}
+                  {!units.some((u) => u.name === editModal.unit) && (
+                    <option value={editModal.unit}>{editModal.unit}</option>
+                  )}
+                </select>
+              </label>
+              <label>
+                Pilihan Sesi *
+                <select
+                  name="academy_session_id"
+                  required
+                  value={editModal.academy_session_id}
+                  onChange={(e) =>
+                    setEditModal({
+                      ...editModal,
+                      academy_session_id: e.target.value,
+                    })
+                  }
+                >
+                  {d?.sessions?.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.starts_at}–{s.ends_at} WITA)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "15px",
+              }}
+            >
+              <label>
+                Kategori Profesi *
+                <select
+                  name="profession"
+                  required
+                  value={editModal.profession}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, profession: e.target.value })
+                  }
+                >
+                  <option value="Dosen">Dosen</option>
+                  <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
+                </select>
+              </label>
+              <label>
+                Status Kepegawaian *
+                <select
+                  name="employment_status"
+                  required
+                  value={editModal.employment_status}
+                  onChange={(e) =>
+                    setEditModal({
+                      ...editModal,
+                      employment_status: e.target.value,
+                    })
+                  }
+                >
+                  <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
+                  <option value="NPT">NPT (Non-PNS Tetap)</option>
+                  <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "15px",
+              }}
+            >
+              <label>
+                Nomor WhatsApp *
+                <input
+                  name="phone"
+                  required
+                  maxLength={20}
+                  value={editModal.phone}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, phone: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Email Unhas (Opsional)
+                <input
+                  name="email"
+                  type="email"
+                  maxLength={200}
+                  value={editModal.email}
+                  onChange={(e) =>
+                    setEditModal({ ...editModal, email: e.target.value })
+                  }
+                />
+              </label>
+            </div>
+            <label>
+              Ganti Berkas Surat Usulan (Format PDF, Maks 5 MB)
+              <input
+                type="file"
+                name="letter"
+                accept=".pdf,application/pdf"
+              />
+              <small>
+                {editModal.letter_file
+                  ? `Berkas tersimpan saat ini: ${editModal.letter_file}. Biarkan kosong jika tidak ingin mengubah berkas.`
+                  : "Belum ada berkas terunggah. Pilih file PDF untuk mengunggah berkas baru."}
+              </small>
+            </label>
+            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <button type="submit" disabled={editBusy}>
+                {editBusy ? "Menyimpan perubahan…" : "Simpan Perubahan ↗"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEditModal(null)}
+              >
+                Batal
+              </button>
+            </div>
+          </form>
         </section>
       )}
 
@@ -426,7 +712,7 @@ export default function Dashboard() {
                       "Sesi",
                       "Surat Usulan",
                       "Terdaftar (WITA)",
-                      "Detail",
+                      "Aksi",
                     ].map((t) => (
                       <th key={t}>{t}</th>
                     ))}
@@ -479,8 +765,40 @@ export default function Dashboard() {
                         )}
                       </td>
                       <td>{date(p.created_at)}</td>
-                      <td>
-                        <button onClick={() => show(p.id)}>Lihat ↗</button>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <button
+                          onClick={() => show(p.id)}
+                          style={{
+                            padding: "5px 9px",
+                            fontSize: "11px",
+                            marginRight: "4px",
+                          }}
+                        >
+                          Lihat ↗
+                        </button>
+                        <button
+                          onClick={() => startEdit(p)}
+                          className="secondary"
+                          style={{
+                            padding: "5px 9px",
+                            fontSize: "11px",
+                            marginRight: "4px",
+                          }}
+                        >
+                          Edit ✎
+                        </button>
+                        <button
+                          onClick={() => deleteParticipant(p.id, p.name)}
+                          style={{
+                            padding: "5px 9px",
+                            fontSize: "11px",
+                            background: "#fff0f0",
+                            color: "#c53030",
+                            border: "1px solid #f0d2d2",
+                          }}
+                        >
+                          Hapus ✕
+                        </button>
                       </td>
                     </tr>
                   ))}

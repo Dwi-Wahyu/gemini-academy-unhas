@@ -178,10 +178,10 @@ export default function Registration() {
               type="file"
               name="letter"
               required
-              accept=".pdf,.jpg,.jpeg,.png"
+              accept=".pdf,application/pdf"
             />
             <small>
-              Unggah berkas usulan bertanda tangan pimpinan unit kerja (PDF, JPG, atau PNG, maks 5 MB).
+              Unggah berkas usulan bertanda tangan pimpinan unit kerja (format PDF, maks 5 MB).
             </small>
           </label>
           <label>
