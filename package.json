@@ -1,0 +1,25 @@
+{
+  "name": "gemini-academy-nextjs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:setup": "node --env-file=.env scripts/setup.mjs",
+    "admin:create": "node --env-file=.env scripts/admin.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "exceljs": "4.4.0",
+    "mysql2": "3.24.6",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
