@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "db:setup": "node --env-file=.env scripts/setup.mjs",
+    "db:migrate": "node --env-file=.env scripts/migrate.mjs",
     "admin:create": "node --env-file=.env scripts/admin.mjs",
     "test": "node --test tests/*.test.mjs"
   },

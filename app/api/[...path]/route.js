@@ -5,7 +5,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { writeFile, mkdir, readFile, unlink } from "node:fs/promises";
 import nodePath from "node:path";
 import bcrypt from "bcryptjs";
-import { db, sessions, workUnits } from "../../../lib/db.js";
+import { db, sessions, workUnits, schedules, getNearestSchedule } from "../../../lib/db.js";
 import { admin, signIn, digest } from "../../../lib/auth.js";
 import { validate } from "../../../lib/validation.js";
 export const runtime = "nodejs";
@@ -25,15 +25,26 @@ async function route(req, ctx) {
       req.headers.get("origin") !== (process.env.APP_ORIGIN || url.origin)
     )
       return json({ error: "Origin permintaan tidak valid." }, 403);
-    if (req.method === "GET" && key === "sessions")
-      return json(await sessions());
+    if (req.method === "GET" && key === "sessions") {
+      const sid = url.searchParams.get("schedule_id");
+      const targetSchedule = sid
+        ? (await schedules()).find((s) => String(s.id) === sid)
+        : await getNearestSchedule();
+      const sessionList = await sessions(sid || targetSchedule?.id || null);
+      return json({
+        schedule: targetSchedule || null,
+        sessions: sessionList,
+      });
+    }
+    if (req.method === "GET" && key === "schedules")
+      return json(await schedules());
     if (req.method === "GET" && key === "units")
       return json(await workUnits());
     if (req.method === "GET" && key === "receipt") {
       const code = (await cookies()).get("academy_receipt")?.value;
       if (!code) return json({ error: "Bukti tidak ditemukan." }, 404);
       const [rows] = await db.execute(
-        "SELECT p.id,p.name,p.registration_code,p.profession,p.employment_status,p.letter_file,s.name AS session,s.starts_at,s.ends_at FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id WHERE p.registration_code=?",
+        "SELECT p.id,p.name,p.registration_code,p.profession,p.employment_status,p.letter_file,s.name AS session,s.starts_at,s.ends_at,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id WHERE p.registration_code=?",
         [code],
       );
       return rows[0]
@@ -302,6 +313,158 @@ async function route(req, ctx) {
       jar.delete("academy_admin");
       return json({ ok: true });
     }
+    if (req.method === "POST" && key === "schedules") {
+      const body = await req.json();
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      const eventDate = typeof body.event_date === "string" ? body.event_date.trim() : "";
+      const location = typeof body.location === "string" ? body.location.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      const sessionList = Array.isArray(body.sessions) && body.sessions.length > 0 ? body.sessions : [
+        { name: "Sesi I", starts_at: "08:30", ends_at: "11:30", capacity: 230 },
+        { name: "Sesi II", starts_at: "13:30", ends_at: "16:30", capacity: 230 },
+      ];
+
+      if (!title || title.length > 255)
+        return json({ error: "Nama program / kegiatan wajib diisi (maks 255 karakter)." }, 422);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate))
+        return json({ error: "Format tanggal kegiatan tidak valid (YYYY-MM-DD)." }, 422);
+      if (!location || location.length > 255)
+        return json({ error: "Lokasi / tempat wajib diisi (maks 255 karakter)." }, 422);
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [res] = await conn.execute(
+          "INSERT INTO schedules (title, event_date, location, description, is_active) VALUES (?, ?, ?, ?, 1)",
+          [title, eventDate, location, description || null]
+        );
+        const scheduleId = res.insertId;
+
+        for (const s of sessionList) {
+          const sName = typeof s.name === "string" && s.name.trim() ? s.name.trim() : "Sesi";
+          const sStarts = typeof s.starts_at === "string" && s.starts_at.trim() ? s.starts_at.trim() : "08:30";
+          const sEnds = typeof s.ends_at === "string" && s.ends_at.trim() ? s.ends_at.trim() : "11:30";
+          const sCap = Number(s.capacity) || 230;
+          await conn.execute(
+            "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved) VALUES (?, ?, ?, ?, ?, 0)",
+            [scheduleId, sName, sStarts, sEnds, sCap]
+          );
+        }
+        await conn.commit();
+        return json({ ok: true, message: "Jadwal berhasil ditambahkan.", schedules: await schedules() }, 201);
+      } catch (e) {
+        try { await conn.rollback(); } catch {}
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+    if (
+      ((req.method === "POST" || req.method === "PUT") &&
+        (key === "schedules/edit" || key === "schedules/update")) ||
+      ((req.method === "POST" || req.method === "PUT") &&
+        routeSegments.length === 3 &&
+        routeSegments[0] === "schedules" &&
+        (routeSegments[2] === "edit" || routeSegments[2] === "update"))
+    ) {
+      let id;
+      let body;
+      try { body = await req.json(); } catch { body = {}; }
+      if (routeSegments.length === 3) id = Number(routeSegments[1]);
+      else id = Number(body.id);
+
+      if (!Number.isSafeInteger(id) || id < 1)
+        return json({ error: "ID jadwal tidak valid." }, 422);
+
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      const eventDate = typeof body.event_date === "string" ? body.event_date.trim() : "";
+      const location = typeof body.location === "string" ? body.location.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      const isActive = body.is_active === false || body.is_active === 0 || body.is_active === "0" ? 0 : 1;
+
+      if (!title || title.length > 255)
+        return json({ error: "Nama program / kegiatan wajib diisi (maks 255 karakter)." }, 422);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate))
+        return json({ error: "Format tanggal kegiatan tidak valid (YYYY-MM-DD)." }, 422);
+      if (!location || location.length > 255)
+        return json({ error: "Lokasi / tempat wajib diisi (maks 255 karakter)." }, 422);
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [existing] = await conn.execute(
+          "SELECT id FROM schedules WHERE id = ? FOR UPDATE",
+          [id]
+        );
+        if (!existing.length) {
+          await conn.rollback();
+          return json({ error: "Jadwal tidak ditemukan." }, 404);
+        }
+
+        await conn.execute(
+          "UPDATE schedules SET title = ?, event_date = ?, location = ?, description = ?, is_active = ? WHERE id = ?",
+          [title, eventDate, location, description || null, isActive, id]
+        );
+
+        if (Array.isArray(body.sessions)) {
+          for (const s of body.sessions) {
+            if (s.id) {
+              const sCap = Number(s.capacity) || 230;
+              await conn.execute(
+                "UPDATE academy_sessions SET name = ?, starts_at = ?, ends_at = ?, capacity = GREATEST(?, reserved) WHERE id = ? AND schedule_id = ?",
+                [s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), sCap, s.id, id]
+              );
+            } else if (s.name) {
+              await conn.execute(
+                "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved) VALUES (?, ?, ?, ?, ?, 0)",
+                [id, s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), Number(s.capacity) || 230]
+              );
+            }
+          }
+        }
+
+        await conn.commit();
+        return json({ ok: true, message: "Jadwal berhasil diperbarui.", schedules: await schedules() });
+      } catch (e) {
+        try { await conn.rollback(); } catch {}
+        throw e;
+      } finally {
+        conn.release();
+      }
+    }
+    if (
+      (req.method === "DELETE" && key.startsWith("schedules/")) ||
+      (req.method === "POST" && key === "schedules/delete")
+    ) {
+      let id;
+      if (key === "schedules/delete" || req.method === "POST") {
+        const b = await req.json();
+        id = Number(b.id);
+      } else {
+        id = Number(routeSegments[1]);
+      }
+      if (!Number.isSafeInteger(id) || id < 1)
+        return json({ error: "ID jadwal tidak valid." }, 422);
+
+      const [sc] = await db.execute("SELECT title FROM schedules WHERE id = ?", [id]);
+      if (!sc.length) return json({ error: "Jadwal tidak ditemukan." }, 404);
+
+      const [[pCount]] = await db.execute(
+        "SELECT COUNT(*) AS count FROM participants p JOIN academy_sessions s ON s.id = p.academy_session_id WHERE s.schedule_id = ?",
+        [id]
+      );
+      if (pCount.count > 0) {
+        return json(
+          {
+            error: `Tidak dapat menghapus jadwal "${sc[0].title}" karena terdapat ${pCount.count} peserta yang sudah terdaftar.`,
+          },
+          409
+        );
+      }
+
+      await db.execute("DELETE FROM schedules WHERE id = ?", [id]);
+      return json({ ok: true, message: `Jadwal "${sc[0].title}" berhasil dihapus.`, schedules: await schedules() });
+    }
     if (req.method === "POST" && key === "units") {
       const body = await req.json();
       const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -479,7 +642,7 @@ async function route(req, ctx) {
       if (!Number.isSafeInteger(id) || id < 1)
         return json({ error: "ID tidak valid." }, 422);
       const [r] = await db.execute(
-        "SELECT p.*,s.name AS session,s.starts_at,s.ends_at FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id WHERE p.id=?",
+        "SELECT p.*,s.name AS session,s.starts_at,s.ends_at,sc.id AS schedule_id,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id WHERE p.id=?",
         [id],
       );
       return r[0]
@@ -725,12 +888,14 @@ async function route(req, ctx) {
     if (req.method === "GET" && (key === "participants" || key === "export")) {
       const q = (url.searchParams.get("q") || "").trim();
       const sid = url.searchParams.get("session");
+      const scid = url.searchParams.get("schedule");
       const page = Number(url.searchParams.get("page") || 1);
       if (
         q.length > 150 ||
         !Number.isSafeInteger(page) ||
         page < 1 ||
-        (sid && !/^[1-9]\d*$/.test(sid))
+        (sid && !/^[1-9]\d*$/.test(sid)) ||
+        (scid && !/^[1-9]\d*$/.test(scid))
       )
         return json({ error: "Filter tidak valid." }, 422);
       let where = " WHERE 1=1";
@@ -740,16 +905,20 @@ async function route(req, ctx) {
           " AND (p.name LIKE ? OR p.nip LIKE ? OR p.unit LIKE ? OR p.email LIKE ? OR p.phone LIKE ? OR p.profession LIKE ? OR p.employment_status LIKE ?)";
         args.push(...Array(7).fill("%" + q + "%"));
       }
+      if (scid) {
+        where += " AND s.schedule_id=?";
+        args.push(scid);
+      }
       if (sid) {
         where += " AND p.academy_session_id=?";
         args.push(sid);
       }
       const base =
-        " FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id" +
+        " FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id" +
         where;
       if (key === "export") {
         const [r] = await db.query(
-          "SELECT p.*,s.name AS session,s.starts_at,s.ends_at" +
+          "SELECT p.*,s.name AS session,s.starts_at,s.ends_at,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location" +
             base +
             " ORDER BY p.id DESC",
           args,
@@ -767,7 +936,7 @@ async function route(req, ctx) {
       }
 
       const [r] = await db.query(
-        "SELECT p.*,s.name AS session" +
+        "SELECT p.*,s.name AS session,s.starts_at,s.ends_at,sc.id AS schedule_id,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location" +
           base +
           " ORDER BY p.id DESC LIMIT 25 OFFSET ?",
         [...args, (page - 1) * 25],
@@ -780,7 +949,8 @@ async function route(req, ctx) {
         participants: r,
         total: count.total,
         all: all.total,
-        sessions: await sessions(),
+        sessions: await sessions(scid || null),
+        schedules: await schedules(),
         page,
       });
     }

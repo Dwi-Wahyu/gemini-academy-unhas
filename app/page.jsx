@@ -1,7 +1,25 @@
 "use client";
 import { useEffect, useState } from "react";
+
+function formatEventDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function Registration() {
-  const [sessions, setSessions] = useState([]),
+  const [schedule, setSchedule] = useState(null),
+    [sessions, setSessions] = useState([]),
     [units, setUnits] = useState([]),
     [error, setError] = useState(""),
     [status, setStatus] = useState("Memuat kuota…"),
@@ -22,11 +40,14 @@ export default function Registration() {
       ]);
       if (!rSessions.ok) throw Error(dSessions.error);
       if (!rUnits.ok) throw Error(dUnits.error);
-      setSessions(dSessions);
+      const sList = dSessions.sessions || (Array.isArray(dSessions) ? dSessions : []);
+      const sSchedule = dSessions.schedule || null;
+      setSessions(sList);
+      setSchedule(sSchedule);
       setUnits(dUnits);
       setStatus("");
       setSelected((v) =>
-        dSessions.some((s) => String(s.id) === v && s.remaining > 0) ? v : "",
+        sList.some((s) => String(s.id) === v && s.remaining > 0) ? v : "",
       );
       setSelectedUnit((v) =>
         dUnits.some((u) => u.name === v && u.remaining > 0) ? v : "",
@@ -75,6 +96,48 @@ export default function Registration() {
           Jelajahi potensi kecerdasan artifisial bersama Gemini Academy.
           Daftarkan diri Anda dan pilih sesi yang sesuai.
         </p>
+        {schedule && (
+          <div
+            style={{
+              margin: "18px 0 20px",
+              padding: "16px 18px",
+              background: "rgba(255, 255, 255, 0.75)",
+              border: "1px solid rgba(226, 232, 240, 0.9)",
+              borderRadius: "14px",
+              boxShadow: "0 4px 15px -2px rgba(15, 23, 42, 0.05)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "#1e3a8a",
+                lineHeight: 1.45,
+                marginBottom: "10px",
+              }}
+            >
+              {schedule.title}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "14px",
+                fontSize: "12.5px",
+                color: "#334155",
+              }}
+            >
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <span>📅</span>
+                <b>{formatEventDate(schedule.event_date)}</b>
+              </div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <span>📍</span>
+                <b>{schedule.location}</b>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="session-list">
           {sessions.map((s, i) => (
             <article className="session-card" key={s.id}>
@@ -88,6 +151,11 @@ export default function Registration() {
               <span className="badge">{s.remaining} kursi tersisa</span>
             </article>
           ))}
+          {!sessions.length && (
+            <div style={{ padding: "16px", color: "#64748b", fontSize: "14px" }}>
+              Belum ada sesi jadwal yang dibuka saat ini.
+            </div>
+          )}
         </div>
         <p className="note">
           ⓘ Kuota awal 230 peserta per sesi. Sesi penuh otomatis tidak dapat

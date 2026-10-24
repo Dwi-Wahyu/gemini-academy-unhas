@@ -6,9 +6,27 @@ const date = (s) =>
     timeZone: "Asia/Makassar",
   });
 
+function formatEventDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function Dashboard() {
   const [d, setD] = useState(null),
     [units, setUnits] = useState([]),
+    [schedules, setSchedules] = useState([]),
+    [filterSchedule, setFilterSchedule] = useState(""),
     [tab, setTab] = useState("participants"),
     [error, setError] = useState(""),
     [unitMsg, setUnitMsg] = useState(""),
@@ -22,13 +40,25 @@ export default function Dashboard() {
     [editUnitModal, setEditUnitModal] = useState(null),
     [editUnitBusy, setEditUnitBusy] = useState(false),
     [confirmModal, setConfirmModal] = useState(null),
-    [confirmBusy, setConfirmBusy] = useState(false);
+    [confirmBusy, setConfirmBusy] = useState(false),
+    [scheduleTitle, setScheduleTitle] = useState("Program Pelatihan dan Sertifikasi Gemini Certified Faculty untuk Dosen dan Tenaga Pendidikan Universitas Hasanuddin"),
+    [scheduleDate, setScheduleDate] = useState("2026-10-30"),
+    [scheduleLocation, setScheduleLocation] = useState("Arsyad Rasyid Lecture Theather"),
+    [scheduleDesc, setScheduleDesc] = useState(""),
+    [scheduleSessions, setScheduleSessions] = useState([
+      { name: "Sesi I", starts_at: "08:30", ends_at: "11:30", capacity: 230 },
+      { name: "Sesi II", starts_at: "13:30", ends_at: "16:30", capacity: 230 },
+    ]),
+    [scheduleBusy, setScheduleBusy] = useState(false),
+    [editScheduleModal, setEditScheduleModal] = useState(null),
+    [editScheduleBusy, setEditScheduleBusy] = useState(false);
 
   // Tangani tombol ESC untuk menutup dialog yang sedang terbuka
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.key === "Escape") {
         if (confirmModal && !confirmBusy) setConfirmModal(null);
+        else if (editScheduleModal && !editScheduleBusy) setEditScheduleModal(null);
         else if (editUnitModal && !editUnitBusy) setEditUnitModal(null);
         else if (editModal && !editBusy) setEditModal(null);
         else if (detail) setDetail(null);
@@ -36,7 +66,7 @@ export default function Dashboard() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [confirmModal, confirmBusy, editUnitModal, editUnitBusy, editModal, editBusy, detail]);
+  }, [confirmModal, confirmBusy, editScheduleModal, editScheduleBusy, editUnitModal, editUnitBusy, editModal, editBusy, detail]);
 
   async function load(q = "") {
     setError("");
@@ -52,6 +82,7 @@ export default function Dashboard() {
       const jP = await rP.json();
       if (!rP.ok) throw Error(jP.error);
       setD(jP);
+      if (jP.schedules) setSchedules(jP.schedules);
       setQuery(q);
       if (rU.ok) setUnits(await rU.json());
     } catch (e) {
@@ -186,6 +217,139 @@ export default function Dashboard() {
     });
   }
 
+  async function addSchedule(e) {
+    e.preventDefault();
+    setScheduleBusy(true);
+    setError("");
+    setUnitMsg("");
+    try {
+      const r = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: scheduleTitle,
+          event_date: scheduleDate,
+          location: scheduleLocation,
+          description: scheduleDesc,
+          sessions: scheduleSessions,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+      setSchedules(j.schedules);
+      setUnitMsg(j.message || "Jadwal kegiatan berhasil ditambahkan.");
+      load(query);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setScheduleBusy(false);
+    }
+  }
+
+  function startEditSchedule(sc) {
+    setEditScheduleModal({
+      id: sc.id,
+      title: sc.title,
+      event_date: sc.event_date,
+      location: sc.location,
+      description: sc.description || "",
+      is_active: sc.is_active,
+      sessions: sc.sessions
+        ? sc.sessions.map((s) => ({
+            id: s.id,
+            name: s.name,
+            starts_at: s.starts_at,
+            ends_at: s.ends_at,
+            capacity: s.capacity,
+            reserved: s.reserved,
+          }))
+        : [],
+    });
+    setError("");
+    setUnitMsg("");
+  }
+
+  async function saveEditSchedule(e) {
+    e.preventDefault();
+    setEditScheduleBusy(true);
+    setError("");
+    setUnitMsg("");
+    try {
+      const r = await fetch("/api/schedules/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editScheduleModal),
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+      setSchedules(j.schedules);
+      setUnitMsg(j.message || "Jadwal berhasil diperbarui.");
+      setEditScheduleModal(null);
+      load(query);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEditScheduleBusy(false);
+    }
+  }
+
+  async function toggleScheduleActive(sc) {
+    setError("");
+    setUnitMsg("");
+    try {
+      const r = await fetch("/api/schedules/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...sc,
+          is_active: sc.is_active ? 0 : 1,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+      setSchedules(j.schedules);
+      setUnitMsg(
+        `Status jadwal "${sc.title}" diubah menjadi ${
+          sc.is_active ? "Nonaktif" : "Aktif"
+        }.`
+      );
+      load(query);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function askDeleteSchedule(id, title) {
+    setConfirmModal({
+      title: "Hapus Jadwal Kegiatan?",
+      message: `Apakah Anda yakin ingin menghapus jadwal "${title}"? Seluruh sesi terkait akan ikut dihapus.`,
+      confirmText: "Ya, Hapus Jadwal",
+      danger: true,
+      action: async () => {
+        setConfirmBusy(true);
+        setError("");
+        setUnitMsg("");
+        try {
+          const r = await fetch("/api/schedules/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw Error(j.error);
+          setSchedules(j.schedules);
+          setUnitMsg(`Jadwal "${title}" berhasil dihapus.`);
+          setConfirmModal(null);
+          load(query);
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setConfirmBusy(false);
+        }
+      },
+    });
+  }
+
   function startEdit(p) {
     setEditModal({
       id: p.id,
@@ -283,6 +447,15 @@ export default function Dashboard() {
           Daftar Peserta {d ? `(${d.total})` : ""}
         </button>
         <button
+          className={tab === "schedules" ? "" : "secondary"}
+          onClick={() => {
+            setTab("schedules");
+            setError("");
+          }}
+        >
+          Manajemen Jadwal ({schedules.length})
+        </button>
+        <button
           className={tab === "units" ? "" : "secondary"}
           onClick={() => {
             setTab("units");
@@ -340,6 +513,10 @@ export default function Dashboard() {
                 "Status Kepegawaian": detail.employment_status || "-",
                 "Nomor WhatsApp": detail.phone,
                 "Email Unhas": detail.email || "Belum memiliki",
+                "Jadwal / Program": detail.schedule_title || "Gemini Academy",
+                "Tanggal & Lokasi":
+                  (detail.event_date ? formatEventDate(detail.event_date) : "-") +
+                  (detail.location ? ` (${detail.location})` : ""),
                 Sesi:
                   detail.session +
                   " · " +
@@ -623,6 +800,223 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* DIALOG EDIT JADWAL */}
+      {editScheduleModal && (
+        <div
+          className="dialog-overlay"
+          onClick={() => !editScheduleBusy && setEditScheduleModal(null)}
+        >
+          <div
+            className="dialog-box"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "620px" }}
+          >
+            <div className="dialog-header">
+              <div>
+                <div className="eyebrow">KELOLA JADWAL</div>
+                <h2>Edit Jadwal Kegiatan</h2>
+              </div>
+              <button
+                type="button"
+                className="dialog-close"
+                onClick={() => setEditScheduleModal(null)}
+                disabled={editScheduleBusy}
+                title="Tutup dialog (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={saveEditSchedule}>
+              <label>
+                Nama Program / Kegiatan *
+                <input
+                  required
+                  maxLength={255}
+                  value={editScheduleModal.title}
+                  onChange={(e) =>
+                    setEditScheduleModal({
+                      ...editScheduleModal,
+                      title: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "15px",
+                }}
+              >
+                <label>
+                  Tanggal Pelaksanaan *
+                  <input
+                    type="date"
+                    required
+                    value={editScheduleModal.event_date}
+                    onChange={(e) =>
+                      setEditScheduleModal({
+                        ...editScheduleModal,
+                        event_date: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Lokasi / Tempat *
+                  <input
+                    required
+                    maxLength={255}
+                    value={editScheduleModal.location}
+                    onChange={(e) =>
+                      setEditScheduleModal({
+                        ...editScheduleModal,
+                        location: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                Keterangan
+                <input
+                  value={editScheduleModal.description || ""}
+                  onChange={(e) =>
+                    setEditScheduleModal({
+                      ...editScheduleModal,
+                      description: e.target.value,
+                    })
+                  }
+                  placeholder="Catatan tambahan kegiatan"
+                />
+              </label>
+              <label>
+                Status Jadwal
+                <select
+                  value={editScheduleModal.is_active ? "1" : "0"}
+                  onChange={(e) =>
+                    setEditScheduleModal({
+                      ...editScheduleModal,
+                      is_active: e.target.value === "1" ? 1 : 0,
+                    })
+                  }
+                >
+                  <option value="1">
+                    Aktif (Bisa dipilih pendaftar jika terdekat)
+                  </option>
+                  <option value="0">
+                    Nonaktif (Disembunyikan dari pendaftaran)
+                  </option>
+                </select>
+              </label>
+
+              {editScheduleModal.sessions?.length > 0 && (
+                <div style={{ marginTop: "12px", marginBottom: "16px" }}>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      color: "#334155",
+                      display: "block",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Pengaturan Sesi & Kapasitas
+                  </span>
+                  <div style={{ display: "grid", gap: "8px" }}>
+                    {editScheduleModal.sessions.map((sess, idx) => (
+                      <div
+                        key={sess.id || idx}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
+                          gap: "8px",
+                          alignItems: "center",
+                          background: "#f8fafc",
+                          padding: "8px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <input
+                          value={sess.name}
+                          onChange={(e) => {
+                            const updated = [...editScheduleModal.sessions];
+                            updated[idx].name = e.target.value;
+                            setEditScheduleModal({
+                              ...editScheduleModal,
+                              sessions: updated,
+                            });
+                          }}
+                          placeholder="Nama Sesi"
+                          required
+                        />
+                        <input
+                          value={sess.starts_at}
+                          onChange={(e) => {
+                            const updated = [...editScheduleModal.sessions];
+                            updated[idx].starts_at = e.target.value;
+                            setEditScheduleModal({
+                              ...editScheduleModal,
+                              sessions: updated,
+                            });
+                          }}
+                          placeholder="Mulai"
+                          required
+                        />
+                        <input
+                          value={sess.ends_at}
+                          onChange={(e) => {
+                            const updated = [...editScheduleModal.sessions];
+                            updated[idx].ends_at = e.target.value;
+                            setEditScheduleModal({
+                              ...editScheduleModal,
+                              sessions: updated,
+                            });
+                          }}
+                          placeholder="Selesai"
+                          required
+                        />
+                        <input
+                          type="number"
+                          value={sess.capacity}
+                          min={sess.reserved || 1}
+                          max={2000}
+                          onChange={(e) => {
+                            const updated = [...editScheduleModal.sessions];
+                            updated[idx].capacity = Number(e.target.value);
+                            setEditScheduleModal({
+                              ...editScheduleModal,
+                              sessions: updated,
+                            });
+                          }}
+                          placeholder="Kapasitas"
+                          required
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setEditScheduleModal(null)}
+                  disabled={editScheduleBusy}
+                >
+                  Batal
+                </button>
+                <button type="submit" disabled={editScheduleBusy}>
+                  {editScheduleBusy ? "Menyimpan…" : "Simpan Perubahan ↗"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* DIALOG EDIT UNIT KERJA */}
       {editUnitModal && (
         <div
@@ -752,7 +1146,307 @@ export default function Dashboard() {
       )}
 
       {/* KONTEN TAB */}
-      {tab === "units" ? (
+      {tab === "schedules" ? (
+        <div style={{ display: "grid", gap: "25px" }}>
+          <section className="card">
+            <div className="eyebrow">PENGATURAN KEGIATAN</div>
+            <h2>Tambah Jadwal & Sesi Baru</h2>
+            <p className="muted">
+              Atur nama program pelatihan, tanggal pelaksanaan, lokasi gedung/ruangan, serta sesi waktu kegiatan.
+            </p>
+            <form onSubmit={addSchedule}>
+              <div style={{ display: "grid", gap: "15px", marginBottom: "15px" }}>
+                <label>
+                  Nama Program / Kegiatan *
+                  <input
+                    required
+                    maxLength={255}
+                    value={scheduleTitle}
+                    onChange={(e) => setScheduleTitle(e.target.value)}
+                    placeholder="Contoh: Program Pelatihan dan Sertifikasi Gemini Certified Faculty untuk Dosen dan Tenaga Pendidikan Universitas Hasanuddin"
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+                  <label>
+                    Tanggal Pelaksanaan *
+                    <input
+                      type="date"
+                      required
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                    />
+                    <small>Jadwal aktif dengan tanggal terdekat otomatis tampil di form publik</small>
+                  </label>
+                  <label>
+                    Lokasi / Tempat *
+                    <input
+                      required
+                      maxLength={255}
+                      value={scheduleLocation}
+                      onChange={(e) => setScheduleLocation(e.target.value)}
+                      placeholder="Contoh: Arsyad Rasyid Lecture Theather"
+                    />
+                    <small>Nama gedung, aula, auditorium, atau ruang kelas</small>
+                  </label>
+                </div>
+                <label>
+                  Keterangan Tambahan <span className="optional">Opsional</span>
+                  <input
+                    value={scheduleDesc}
+                    onChange={(e) => setScheduleDesc(e.target.value)}
+                    placeholder="Catatan tambahan kegiatan jika ada"
+                  />
+                </label>
+              </div>
+
+              <div
+                style={{
+                  background: "#f8fafc",
+                  padding: "16px",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: "15px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: "13px", color: "#334155" }}>
+                    Daftar Sesi pada Jadwal Ini ({scheduleSessions.length} sesi)
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      const nextNum = scheduleSessions.length + 1;
+                      const roman =
+                        nextNum === 3 ? "III" : nextNum === 4 ? "IV" : String(nextNum);
+                      setScheduleSessions([
+                        ...scheduleSessions,
+                        {
+                          name: `Sesi ${roman}`,
+                          starts_at: "08:30",
+                          ends_at: "11:30",
+                          capacity: 230,
+                        },
+                      ]);
+                    }}
+                    style={{ padding: "5px 10px", fontSize: "12px" }}
+                  >
+                    + Tambah Sesi
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {scheduleSessions.map((sess, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1.5fr 1fr 1fr 1fr auto",
+                        gap: "10px",
+                        alignItems: "center",
+                        background: "#fff",
+                        padding: "10px",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <input
+                        placeholder="Nama Sesi (misal: Sesi I)"
+                        value={sess.name}
+                        onChange={(e) => {
+                          const updated = [...scheduleSessions];
+                          updated[idx].name = e.target.value;
+                          setScheduleSessions(updated);
+                        }}
+                        required
+                      />
+                      <input
+                        placeholder="Mulai (08:30)"
+                        value={sess.starts_at}
+                        onChange={(e) => {
+                          const updated = [...scheduleSessions];
+                          updated[idx].starts_at = e.target.value;
+                          setScheduleSessions(updated);
+                        }}
+                        required
+                      />
+                      <input
+                        placeholder="Selesai (11:30)"
+                        value={sess.ends_at}
+                        onChange={(e) => {
+                          const updated = [...scheduleSessions];
+                          updated[idx].ends_at = e.target.value;
+                          setScheduleSessions(updated);
+                        }}
+                        required
+                      />
+                      <input
+                        type="number"
+                        placeholder="Kapasitas"
+                        min={1}
+                        max={2000}
+                        value={sess.capacity}
+                        onChange={(e) => {
+                          const updated = [...scheduleSessions];
+                          updated[idx].capacity = Number(e.target.value);
+                          setScheduleSessions(updated);
+                        }}
+                        required
+                      />
+                      {scheduleSessions.length > 1 ? (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => {
+                            setScheduleSessions(
+                              scheduleSessions.filter((_, i) => i !== idx)
+                            );
+                          }}
+                          style={{ padding: "6px 10px", color: "#c53030" }}
+                          title="Hapus sesi"
+                        >
+                          ✕
+                        </button>
+                      ) : (
+                        <div style={{ width: "32px" }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button type="submit" disabled={scheduleBusy}>
+                {scheduleBusy ? "Menyimpan Jadwal…" : "+ Simpan Jadwal Baru"}
+              </button>
+            </form>
+          </section>
+
+          <section className="card table-card">
+            <div className="table-meta" style={{ fontWeight: 600 }}>
+              Daftar Jadwal Kegiatan ({schedules.length})
+            </div>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Nama Program</th>
+                    <th>Tanggal & Tempat</th>
+                    <th>Sesi & Kuota</th>
+                    <th>Total Peserta</th>
+                    <th>Status</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.map((sc, i) => (
+                    <tr key={sc.id}>
+                      <td>{i + 1}</td>
+                      <td>
+                        <b>{sc.title}</b>
+                        {sc.description && <small>{sc.description}</small>}
+                      </td>
+                      <td>
+                        <b style={{ color: "#1e3a8a" }}>
+                          {formatEventDate(sc.event_date)}
+                        </b>
+                        <small>📍 {sc.location}</small>
+                      </td>
+                      <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "4px",
+                          }}
+                        >
+                          {sc.sessions?.map((s) => (
+                            <span
+                              key={s.id}
+                              style={{ fontSize: "11px", color: "#475569" }}
+                            >
+                              • <b>{s.name}</b> ({s.starts_at}–{s.ends_at} WITA):{" "}
+                              <strong>{s.reserved}</strong>/{s.capacity} (
+                              {s.remaining} sisa)
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <strong>{sc.total_reserved}</strong> / {sc.total_capacity}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="badge"
+                          onClick={() => toggleScheduleActive(sc)}
+                          style={{
+                            cursor: "pointer",
+                            background: sc.is_active ? "#edf7f2" : "#f1f5f9",
+                            color: sc.is_active ? "#2f855a" : "#64748b",
+                            border: "none",
+                          }}
+                          title="Klik untuk ubah status aktif/nonaktif"
+                        >
+                          {sc.is_active ? "● Aktif" : "○ Nonaktif"}
+                        </button>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <button
+                          className="secondary"
+                          onClick={() => startEditSchedule(sc)}
+                          style={{
+                            padding: "6px 12px",
+                            fontSize: "11px",
+                            marginRight: "6px",
+                          }}
+                        >
+                          Edit ✎
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => askDeleteSchedule(sc.id, sc.title)}
+                          disabled={Number(sc.total_reserved) > 0}
+                          title={
+                            Number(sc.total_reserved) > 0
+                              ? "Tidak dapat dihapus karena sudah ada peserta"
+                              : "Hapus jadwal"
+                          }
+                          style={{
+                            color:
+                              Number(sc.total_reserved) > 0
+                                ? "#a0aec0"
+                                : "#c53030",
+                            borderColor: "#e2e8f0",
+                            padding: "6px 12px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          Hapus ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!schedules.length && (
+                    <tr>
+                      <td colSpan={7} className="empty">
+                        Belum ada jadwal yang ditambahkan.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : tab === "units" ? (
         <div style={{ display: "grid", gap: "25px" }}>
           <section className="card">
             <div className="eyebrow">INPUT DATA MANUAL</div>
@@ -903,7 +1597,7 @@ export default function Dashboard() {
               <span>Total pendaftar</span>
               <strong>{d.all}</strong>
               <small>
-                dari {d.sessions.reduce((a, s) => a + s.capacity, 0)} kursi
+                dari {d.sessions.reduce((a, s) => a + (Number(s.capacity) || 0), 0)} kursi
               </small>
             </article>
             {d.sessions.map((s) => (
@@ -939,12 +1633,35 @@ export default function Dashboard() {
                 />
               </label>
               <label>
-                Filter sesi
+                Filter Jadwal
+                <select
+                  name="schedule"
+                  value={filterSchedule}
+                  onChange={(e) => setFilterSchedule(e.target.value)}
+                >
+                  <option value="">Semua Jadwal</option>
+                  {schedules.map((sc) => (
+                    <option key={sc.id} value={sc.id}>
+                      {formatEventDate(sc.event_date)} —{" "}
+                      {sc.title.length > 28
+                        ? sc.title.slice(0, 28) + "…"
+                        : sc.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Filter Sesi
                 <select name="session">
                   <option value="">Semua sesi</option>
-                  {d.sessions.map((s) => (
+                  {(filterSchedule
+                    ? d.sessions.filter(
+                        (s) => String(s.schedule_id) === String(filterSchedule)
+                      )
+                    : d.sessions
+                  ).map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}
+                      {s.name} ({s.starts_at}–{s.ends_at} WITA)
                     </option>
                   ))}
                 </select>
@@ -968,7 +1685,7 @@ export default function Dashboard() {
                       "Unit Kerja",
                       "Profesi / Status",
                       "WhatsApp / Email",
-                      "Sesi",
+                      "Jadwal & Sesi",
                       "Surat Usulan",
                       "Terdaftar (WITA)",
                       "Aksi",
@@ -1001,7 +1718,13 @@ export default function Dashboard() {
                         {p.phone}
                         <small>{p.email || "Belum memiliki email Unhas"}</small>
                       </td>
-                      <td>{p.session}</td>
+                      <td>
+                        <b>{p.session}</b>
+                        <small style={{ color: "#64748b", display: "block" }}>
+                          {p.event_date ? formatEventDate(p.event_date) : ""}
+                          {p.location ? ` · ${p.location}` : ""}
+                        </small>
+                      </td>
                       <td>
                         {p.letter_file ? (
                           <a
