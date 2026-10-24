@@ -30,7 +30,9 @@ async function route(req, ctx) {
       const targetSchedule = sid
         ? (await schedules()).find((s) => String(s.id) === sid)
         : await getNearestSchedule();
-      const sessionList = await sessions(sid || targetSchedule?.id || null);
+      const sessionList = targetSchedule
+        ? await sessions(targetSchedule.id)
+        : (sid ? await sessions(sid) : []);
       return json({
         schedule: targetSchedule || null,
         sessions: sessionList,

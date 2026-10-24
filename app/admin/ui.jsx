@@ -27,6 +27,7 @@ export default function Dashboard() {
     [units, setUnits] = useState([]),
     [schedules, setSchedules] = useState([]),
     [filterSchedule, setFilterSchedule] = useState(""),
+    [filterSession, setFilterSession] = useState(""),
     [tab, setTab] = useState("participants"),
     [error, setError] = useState(""),
     [unitMsg, setUnitMsg] = useState(""),
@@ -1597,13 +1598,26 @@ export default function Dashboard() {
               <span>Total pendaftar</span>
               <strong>{d.all}</strong>
               <small>
-                dari {d.sessions.reduce((a, s) => a + (Number(s.capacity) || 0), 0)} kursi
+                dari{" "}
+                {(filterSchedule
+                  ? d.sessions.filter(
+                      (s) => String(s.schedule_id) === String(filterSchedule)
+                    )
+                  : d.sessions
+                ).reduce((a, s) => a + (Number(s.capacity) || 0), 0)}{" "}
+                kursi
               </small>
             </article>
-            {d.sessions.map((s) => (
+            {(filterSchedule
+              ? d.sessions.filter(
+                  (s) => String(s.schedule_id) === String(filterSchedule)
+                )
+              : d.sessions
+            ).map((s) => (
               <article key={s.id}>
                 <span>
                   {s.name} · {s.starts_at}–{s.ends_at} WITA
+                  {s.event_date ? ` (${formatEventDate(s.event_date)})` : ""}
                 </span>
                 <strong>
                   {s.reserved} <small>/ {s.capacity}</small>
@@ -1637,7 +1651,10 @@ export default function Dashboard() {
                 <select
                   name="schedule"
                   value={filterSchedule}
-                  onChange={(e) => setFilterSchedule(e.target.value)}
+                  onChange={(e) => {
+                    setFilterSchedule(e.target.value);
+                    setFilterSession("");
+                  }}
                 >
                   <option value="">Semua Jadwal</option>
                   {schedules.map((sc) => (
@@ -1652,16 +1669,26 @@ export default function Dashboard() {
               </label>
               <label>
                 Filter Sesi
-                <select name="session">
+                <select
+                  name="session"
+                  value={filterSession}
+                  onChange={(e) => setFilterSession(e.target.value)}
+                >
                   <option value="">Semua sesi</option>
                   {(filterSchedule
-                    ? d.sessions.filter(
+                    ? schedules.find(
+                        (sc) => String(sc.id) === String(filterSchedule)
+                      )?.sessions ||
+                      d.sessions.filter(
                         (s) => String(s.schedule_id) === String(filterSchedule)
                       )
                     : d.sessions
                   ).map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.starts_at}–{s.ends_at} WITA)
+                      {!filterSchedule && s.schedule_title
+                        ? ` · ${s.schedule_title.slice(0, 24)}…`
+                        : ""}
                     </option>
                   ))}
                 </select>
