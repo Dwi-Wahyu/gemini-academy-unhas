@@ -27,14 +27,17 @@ async function route(req, ctx) {
       return json({ error: "Origin permintaan tidak valid." }, 403);
     if (req.method === "GET" && key === "sessions") {
       const sid = url.searchParams.get("schedule_id");
+      const allScheds = await schedules();
+      const activeScheds = allScheds.filter((s) => s.is_active);
       const targetSchedule = sid
-        ? (await schedules()).find((s) => String(s.id) === sid)
-        : await getNearestSchedule();
+        ? allScheds.find((s) => String(s.id) === sid)
+        : ((await getNearestSchedule()) || activeScheds[0] || null);
       const sessionList = targetSchedule
         ? await sessions(targetSchedule.id)
         : (sid ? await sessions(sid) : []);
       return json({
         schedule: targetSchedule || null,
+        schedules: activeScheds,
         sessions: sessionList,
       });
     }
@@ -155,6 +158,30 @@ async function route(req, ctx) {
       const conn = await db.getConnection();
       try {
         await conn.beginTransaction();
+
+        const [targetSessionRows] = await conn.execute(
+          "SELECT id, name, capacity, reserved, allowed_professions FROM academy_sessions WHERE id = ? FOR UPDATE",
+          [d.academy_session_id]
+        );
+        if (!targetSessionRows.length) {
+          await conn.rollback();
+          return json({ error: "Sesi tidak ditemukan." }, 404);
+        }
+        const targetSession = targetSessionRows[0];
+        const allowed = targetSession.allowed_professions;
+        if (allowed && allowed !== "ALL") {
+          const allowedList = allowed.split(",").map((s) => s.trim().toLowerCase());
+          if (!allowedList.includes(d.profession.toLowerCase())) {
+            await conn.rollback();
+            return json(
+              {
+                error: `Sesi "${targetSession.name}" hanya dapat dipilih oleh kategori profesi: ${allowed.replace(/,/g, ", ")}.`,
+              },
+              422
+            );
+          }
+        }
+
         const [taken] = await conn.execute(
           "UPDATE academy_sessions SET reserved=reserved+1 WHERE id=? AND reserved<capacity",
           [d.academy_session_id],
@@ -347,9 +374,10 @@ async function route(req, ctx) {
           const sStarts = typeof s.starts_at === "string" && s.starts_at.trim() ? s.starts_at.trim() : "08:30";
           const sEnds = typeof s.ends_at === "string" && s.ends_at.trim() ? s.ends_at.trim() : "11:30";
           const sCap = Number(s.capacity) || 230;
+          const sAllowed = typeof s.allowed_professions === "string" && s.allowed_professions.trim() ? s.allowed_professions.trim() : "ALL";
           await conn.execute(
-            "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved) VALUES (?, ?, ?, ?, ?, 0)",
-            [scheduleId, sName, sStarts, sEnds, sCap]
+            "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            [scheduleId, sName, sStarts, sEnds, sCap, sAllowed]
           );
         }
         await conn.commit();
@@ -410,16 +438,17 @@ async function route(req, ctx) {
 
         if (Array.isArray(body.sessions)) {
           for (const s of body.sessions) {
+            const sAllowed = typeof s.allowed_professions === "string" && s.allowed_professions.trim() ? s.allowed_professions.trim() : "ALL";
             if (s.id) {
               const sCap = Number(s.capacity) || 230;
               await conn.execute(
-                "UPDATE academy_sessions SET name = ?, starts_at = ?, ends_at = ?, capacity = GREATEST(?, reserved) WHERE id = ? AND schedule_id = ?",
-                [s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), sCap, s.id, id]
+                "UPDATE academy_sessions SET name = ?, starts_at = ?, ends_at = ?, capacity = GREATEST(?, reserved), allowed_professions = ? WHERE id = ? AND schedule_id = ?",
+                [s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), sCap, sAllowed, s.id, id]
               );
             } else if (s.name) {
               await conn.execute(
-                "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved) VALUES (?, ?, ?, ?, ?, 0)",
-                [id, s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), Number(s.capacity) || 230]
+                "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                [id, s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), Number(s.capacity) || 230, sAllowed]
               );
             }
           }

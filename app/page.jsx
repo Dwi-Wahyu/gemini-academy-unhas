@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 function formatEventDate(dateStr) {
   if (!dateStr) return "";
@@ -17,293 +18,325 @@ function formatEventDate(dateStr) {
   }
 }
 
-export default function Registration() {
-  const [schedule, setSchedule] = useState(null),
-    [sessions, setSessions] = useState([]),
-    [units, setUnits] = useState([]),
-    [error, setError] = useState(""),
-    [status, setStatus] = useState("Memuat kuota…"),
-    [busy, setBusy] = useState(false),
-    [selected, setSelected] = useState(""),
-    [selectedUnit, setSelectedUnit] = useState(""),
-    [profession, setProfession] = useState(""),
-    [employmentStatus, setEmploymentStatus] = useState("");
-  async function refresh() {
+export default function HomeLanding() {
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  async function loadData() {
     try {
-      const [rSessions, rUnits] = await Promise.all([
-        fetch("/api/sessions", { cache: "no-store" }),
-        fetch("/api/units", { cache: "no-store" }),
-      ]);
-      const [dSessions, dUnits] = await Promise.all([
-        rSessions.json(),
-        rUnits.json(),
-      ]);
-      if (!rSessions.ok) throw Error(dSessions.error);
-      if (!rUnits.ok) throw Error(dUnits.error);
-      const sList = dSessions.sessions || (Array.isArray(dSessions) ? dSessions : []);
-      const sSchedule = dSessions.schedule || null;
-      setSessions(sList);
-      setSchedule(sSchedule);
-      setUnits(dUnits);
-      setStatus("");
-      setSelected((v) =>
-        sList.some((s) => String(s.id) === v && s.remaining > 0) ? v : "",
-      );
-      setSelectedUnit((v) =>
-        dUnits.some((u) => u.name === v && u.remaining > 0) ? v : "",
-      );
+      const res = await fetch("/api/schedules", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setSchedules(data);
     } catch {
-      setStatus(
-        "Kuota belum dapat diperbarui. Coba kembali beberapa saat lagi.",
-      );
+    } finally {
+      setLoading(false);
     }
   }
+
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 15000);
+    loadData();
+    const t = setInterval(loadData, 15000);
     return () => clearInterval(t);
   }, []);
-  async function submit(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const formData = new FormData(e.currentTarget);
-      const r = await fetch("/api/register", {
-        method: "POST",
-        body: formData,
-      });
-      const d = await r.json();
-      if (!r.ok) throw Error(d.error);
-      window.location.assign("/success");
-    } catch (e) {
-      setError(e.message);
-      setBusy(false);
-      refresh();
-    }
-  }
-  const full = sessions.length > 0 && sessions.every((s) => s.remaining === 0);
+
+  const roles = [
+    {
+      id: "pimpinan",
+      role: "Pimpinan",
+      icon: "🏛️",
+      title: "Pimpinan Unit Kerja",
+      badge: "Hari I — Jumat, 30 Okt 2026",
+      badgeBg: "#eff6ff",
+      badgeColor: "#1e40af",
+      target: "Rektorat, Dekanat, Direktur Sekolah, Ketua Lembaga, dan Kepala Biro",
+      description: "Sesi pelatihan tingkat kepemimpinan strategis dalam pemanfaatan kecerdasan artifisial.",
+      href: "/daftar/pimpinan",
+      action: "Buka Formulir Pimpinan →",
+      btnBg: "#1e3a8a",
+    },
+    {
+      id: "dosen",
+      role: "Dosen",
+      icon: "👨‍🏫",
+      title: "Dosen / Pendidik",
+      badge: "Hari I — Jumat, 30 Okt 2026",
+      badgeBg: "#eff6ff",
+      badgeColor: "#1e40af",
+      target: "Dosen Tetap / Tenaga Pendidik Universitas Hasanuddin",
+      description: "Pelatihan integrasi Gemini AI dalam pengajaran, riset akademik, dan kurikulum.",
+      href: "/daftar/dosen",
+      action: "Buka Formulir Dosen →",
+      btnBg: "#2563eb",
+    },
+    {
+      id: "tendik",
+      role: "Tendik",
+      icon: "💼",
+      title: "Tenaga Kependidikan",
+      badge: "Hari II — Sabtu, 31 Okt 2026",
+      badgeBg: "#ecfdf5",
+      badgeColor: "#065f46",
+      target: "Staf Administrasi, Laboran, Pranata Komputer, dan Pustakawan",
+      description: "Peningkatan efisiensi kerja administrasi dan layanan kampus berbasis AI.",
+      href: "/daftar/tendik",
+      action: "Buka Formulir Tendik →",
+      btnBg: "#059669",
+    },
+    {
+      id: "mahasiswa",
+      role: "Mahasiswa",
+      icon: "🎓",
+      title: "Mahasiswa",
+      badge: "Hari II — Sabtu, 31 Okt 2026",
+      badgeBg: "#f5f3ff",
+      badgeColor: "#5b21b6",
+      target: "Mahasiswa Aktif Diploma, Sarjana, dan Pascasarjana Unhas",
+      description: "Eksplorasi kecerdasan artifisial untuk produktivitas studi, inovasi, dan riset.",
+      href: "/daftar/mahasiswa",
+      action: "Buka Formulir Mahasiswa →",
+      btnBg: "#7c3aed",
+    },
+  ];
+
   return (
-    <div className="registration-grid">
-      <section className="intro">
-        <div className="eyebrow">● PENDAFTARAN PESERTA</div>
-        <h1>
-          Mulai langkah
-          <br />
-          baru bersama <span>AI.</span>
+    <div style={{ maxWidth: "1160px", margin: "0 auto" }}>
+      {/* HERO SECTION */}
+      <section style={{ textAlign: "center", padding: "20px 10px 40px" }}>
+        <div className="eyebrow">● PENDAFTARAN RESMI PESERTA</div>
+        <h1 style={{ fontSize: "56px", margin: "16px 0 20px", letterSpacing: "-1.5px" }}>
+          Gemini Academy <span>Universitas Hasanuddin</span>
         </h1>
-        <p className="lead">
-          Jelajahi potensi kecerdasan artifisial bersama Gemini Academy.
-          Daftarkan diri Anda dan pilih sesi yang sesuai.
+        <p
+          className="lead"
+          style={{
+            maxWidth: "680px",
+            margin: "0 auto 30px",
+            fontSize: "16px",
+            lineHeight: 1.8,
+            color: "#64748b",
+          }}
+        >
+          Program Pelatihan & Sertifikasi Kecerdasan Artifisial (AI) terdepan.
+          Pendaftaran dibagi ke dalam formulir terpisah berdasarkan kategori profesi.
+          Silakan pilih jalur pendaftaran Anda di bawah ini:
         </p>
-        {schedule && (
-          <div
-            style={{
-              margin: "18px 0 20px",
-              padding: "16px 18px",
-              background: "rgba(255, 255, 255, 0.75)",
-              border: "1px solid rgba(226, 232, 240, 0.9)",
-              borderRadius: "14px",
-              boxShadow: "0 4px 15px -2px rgba(15, 23, 42, 0.05)",
-            }}
-          >
+
+        {/* INFO TANGGAL & LOKASI */}
+        <div
+          style={{
+            display: "inline-flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "18px",
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "50px",
+            padding: "10px 24px",
+            boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)",
+            fontSize: "13px",
+            color: "#334155",
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <span>📅</span>
+            <b>Jumat, 30 Okt 2026</b> (Dosen & Pimpinan)
+          </div>
+          <span style={{ color: "#cbd5e1" }}>•</span>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <span>📅</span>
+            <b>Sabtu, 31 Okt 2026</b> (Tendik & Mahasiswa)
+          </div>
+          <span style={{ color: "#cbd5e1" }}>•</span>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <span>📍</span>
+            <b>Arsyad Rasyid Lecture Theater</b>
+          </div>
+        </div>
+      </section>
+
+      {/* 4 ROLE NAVIGATION CARDS */}
+      <section style={{ margin: "20px 0 50px" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: "20px",
+          }}
+        >
+          {roles.map((r) => (
             <div
+              key={r.id}
               style={{
-                fontSize: "13px",
-                fontWeight: 700,
-                color: "#1e3a8a",
-                lineHeight: 1.45,
-                marginBottom: "10px",
-              }}
-            >
-              {schedule.title}
-            </div>
-            <div
-              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "20px",
+                padding: "26px",
                 display: "flex",
-                flexWrap: "wrap",
-                gap: "14px",
-                fontSize: "12.5px",
-                color: "#334155",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                boxShadow: "0 6px 20px -4px rgba(15, 23, 42, 0.06)",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
               }}
             >
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                <span>📅</span>
-                <b>{formatEventDate(schedule.event_date)}</b>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+                  <span style={{ fontSize: "36px" }}>{r.icon}</span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      padding: "4px 10px",
+                      borderRadius: "12px",
+                      background: r.badgeBg,
+                      color: r.badgeColor,
+                    }}
+                  >
+                    {r.badge}
+                  </span>
+                </div>
+
+                <h3 style={{ fontSize: "20px", margin: "0 0 8px", color: "#0f172a", fontWeight: 700 }}>
+                  {r.title}
+                </h3>
+                <p style={{ fontSize: "12px", color: "#64748b", margin: "0 0 14px", lineHeight: 1.6 }}>
+                  {r.description}
+                </p>
+
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #f1f5f9",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    fontSize: "11px",
+                    color: "#475569",
+                    marginBottom: "20px",
+                  }}
+                >
+                  <b style={{ color: "#334155", display: "block", marginBottom: "3px" }}>
+                    Sasaran Peserta:
+                  </b>
+                  {r.target}
+                </div>
               </div>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                <span>📍</span>
-                <b>{schedule.location}</b>
-              </div>
+
+              <Link
+                href={r.href}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  background: r.btnBg,
+                  color: "#ffffff",
+                  padding: "12px 18px",
+                  borderRadius: "10px",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  textDecoration: "none",
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+                  transition: "opacity 0.15s ease",
+                }}
+              >
+                {r.action}
+              </Link>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* OVERVIEW KUOTA SESI REAL-TIME */}
+      <section
+        style={{
+          background: "#ffffff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "20px",
+          padding: "32px",
+          boxShadow: "0 4px 20px rgba(15, 23, 42, 0.04)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "20px" }}>
+          <div>
+            <div className="eyebrow">MONITORING KUOTA PELATIHAN</div>
+            <h2 style={{ fontSize: "22px", margin: "4px 0 0" }}>Jadwal & Sesi Pelatihan</h2>
+          </div>
+          <span style={{ fontSize: "11.5px", color: "#64748b" }}>
+            Diperbarui otomatis tiap 15 detik
+          </span>
+        </div>
+
+        {loading ? (
+          <p style={{ color: "#94a3b8", fontSize: "13px" }}>Memuat jadwal kegiatan…</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
+            {schedules.map((sc) => (
+              <div
+                key={sc.id}
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "14px",
+                  padding: "20px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                  <div>
+                    <b style={{ color: "#1e3a8a", fontSize: "14px", display: "block" }}>
+                      📅 {formatEventDate(sc.event_date)}
+                    </b>
+                    <small style={{ color: "#64748b" }}>📍 {sc.location}</small>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                      background: sc.id === 1 ? "#eff6ff" : "#ecfdf5",
+                      color: sc.id === 1 ? "#1e40af" : "#065f46",
+                    }}
+                  >
+                    {sc.id === 1 ? "Dosen & Pimpinan" : "Tendik & Mahasiswa"}
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+                  {sc.sessions?.map((s) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        background: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "12px 14px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <b style={{ fontSize: "13px", color: "#1e293b" }}>{s.name}</b>
+                        <small style={{ color: "#64748b", display: "block", marginTop: "2px" }}>
+                          {s.starts_at}–{s.ends_at} WITA
+                        </small>
+                      </div>
+                      <span
+                        className="badge"
+                        style={{
+                          background: s.remaining > 0 ? "#edf7f2" : "#fef2f2",
+                          color: s.remaining > 0 ? "#3a8c73" : "#dc2626",
+                          padding: "6px 10px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {s.remaining > 0 ? `${s.remaining} kursi sisa` : "PENUH"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
-        <div className="session-list">
-          {sessions.map((s, i) => (
-            <article className="session-card" key={s.id}>
-              <span className="icon">{i ? "◷" : "☀"}</span>
-              <div>
-                <b>{s.name}</b>
-                <p>
-                  {s.starts_at}–{s.ends_at} WITA
-                </p>
-              </div>
-              <span className="badge">{s.remaining} kursi tersisa</span>
-            </article>
-          ))}
-          {!sessions.length && (
-            <div style={{ padding: "16px", color: "#64748b", fontSize: "14px" }}>
-              Belum ada sesi jadwal yang dibuka saat ini.
-            </div>
-          )}
-        </div>
-        <p className="note">
-          ⓘ Kuota awal 230 peserta per sesi. Sesi penuh otomatis tidak dapat
-          dipilih.
-        </p>
-        <div className="decor">✦</div>
-      </section>
-      <section className="card">
-        <div className="eyebrow">01 / PENDAFTARAN</div>
-        <h2>Daftar Gemini Academy</h2>
-        <p className="muted">Lengkapi data diri Anda di bawah ini.</p>
-        {error && (
-          <p className="alert" role="alert">
-            {error}
-          </p>
-        )}
-        <form onSubmit={submit}>
-          <label>
-            Nama Lengkap *
-            <input
-              name="name"
-              required
-              minLength={2}
-              maxLength={150}
-              autoComplete="name"
-              placeholder="Nama lengkap beserta gelar"
-            />
-          </label>
-          <label>
-            NIP *
-            <input
-              name="nip"
-              required
-              pattern="[0-9]{18}"
-              maxLength={18}
-              inputMode="numeric"
-              placeholder="Masukkan 18 digit NIP"
-            />
-            <small>NIP digunakan untuk mencegah pendaftaran ganda.</small>
-          </label>
-          <label>
-            Unit Kerja *
-            <select
-              required
-              name="unit"
-              value={selectedUnit}
-              onChange={(e) => setSelectedUnit(e.target.value)}
-            >
-              <option value="">Pilih unit kerja / fakultas</option>
-              {units.map((u) => (
-                <option key={u.id} value={u.name} disabled={u.remaining <= 0}>
-                  {u.name} — {u.remaining > 0 ? `${u.remaining} kuota tersisa (maks ${u.max_quota})` : `KUOTA PENUH (maks ${u.max_quota})`}
-                </option>
-              ))}
-            </select>
-            <small>Setiap unit kerja memiliki batas maksimal pengusulan.</small>
-          </label>
-          <label>
-            Kategori Profesi *
-            <select
-              required
-              name="profession"
-              value={profession}
-              onChange={(e) => setProfession(e.target.value)}
-            >
-              <option value="">Pilih kategori profesi</option>
-              <option value="Dosen">Dosen</option>
-              <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
-            </select>
-          </label>
-          <label>
-            Status Kepegawaian *
-            <select
-              required
-              name="employment_status"
-              value={employmentStatus}
-              onChange={(e) => setEmploymentStatus(e.target.value)}
-            >
-              <option value="">Pilih status kepegawaian</option>
-              <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
-              <option value="NPT">NPT (Non-PNS Tetap)</option>
-              <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
-            </select>
-          </label>
-          <label>
-            Surat Usulan Pimpinan Unit Kerja *
-            <input
-              type="file"
-              name="letter"
-              required
-              accept=".pdf,application/pdf"
-            />
-            <small>
-              Unggah berkas usulan bertanda tangan pimpinan unit kerja (format PDF, maks 5 MB).
-            </small>
-          </label>
-          <label>
-            Nomor WhatsApp Aktif *
-            <input
-              type="tel"
-              name="phone"
-              required
-              maxLength={20}
-              autoComplete="tel"
-              placeholder="081234567890"
-            />
-          </label>
-          <label>
-            Alamat Email Unhas <span className="optional">Opsional</span>
-            <input
-              name="email"
-              type="email"
-              maxLength={200}
-              autoComplete="email"
-              placeholder="nama@unhas.ac.id"
-            />
-            <small>Boleh dikosongkan bila belum memiliki.</small>
-          </label>
-          <label>
-            Pilihan Sesi *
-            <select
-              required
-              name="academy_session_id"
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              <option value="">Pilih sesi yang tersedia</option>
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id} disabled={!s.remaining}>
-                  {s.name} : {s.starts_at}–{s.ends_at} WITA —{" "}
-                  {s.remaining ? s.remaining + " kursi" : "PENUH"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="muted" role="status">
-            {full ? "Semua sesi penuh. Pendaftaran ditutup." : status}
-          </p>
-          <button
-            className="primary"
-            disabled={busy || full || !sessions.length}
-          >
-            {busy ? "Menyimpan pendaftaran…" : "Daftar sekarang ↗"}
-          </button>
-          <p className="privacy">
-            Data digunakan untuk administrasi kegiatan Gemini Academy.
-          </p>
-        </form>
       </section>
     </div>
   );

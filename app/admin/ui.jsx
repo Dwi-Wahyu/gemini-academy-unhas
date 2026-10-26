@@ -22,6 +22,25 @@ function formatEventDate(dateStr) {
   }
 }
 
+const PROFESSIONS = ["Dosen", "Pimpinan", "Tendik", "Mahasiswa"];
+
+function parseProfessions(str) {
+  if (!str || str === "ALL") return [...PROFESSIONS];
+  return str.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function toggleProfession(currentStr, prof) {
+  let list = parseProfessions(currentStr);
+  if (list.includes(prof)) {
+    list = list.filter((p) => p !== prof);
+  } else {
+    list = [...list, prof];
+  }
+  if (list.length === 0) return prof;
+  if (list.length === PROFESSIONS.length) return "ALL";
+  return list.join(",");
+}
+
 export default function Dashboard() {
   const [d, setD] = useState(null),
     [units, setUnits] = useState([]),
@@ -47,8 +66,8 @@ export default function Dashboard() {
     [scheduleLocation, setScheduleLocation] = useState("Arsyad Rasyid Lecture Theather"),
     [scheduleDesc, setScheduleDesc] = useState(""),
     [scheduleSessions, setScheduleSessions] = useState([
-      { name: "Sesi I", starts_at: "08:30", ends_at: "11:30", capacity: 230 },
-      { name: "Sesi II", starts_at: "13:30", ends_at: "16:30", capacity: 230 },
+      { name: "Sesi I (Pagi)", starts_at: "08:30", ends_at: "11:30", capacity: 230, allowed_professions: "Dosen,Pimpinan" },
+      { name: "Sesi II (Siang)", starts_at: "13:30", ends_at: "16:30", capacity: 230, allowed_professions: "Dosen,Pimpinan,Tendik" },
     ]),
     [scheduleBusy, setScheduleBusy] = useState(false),
     [editScheduleModal, setEditScheduleModal] = useState(null),
@@ -263,6 +282,7 @@ export default function Dashboard() {
             ends_at: s.ends_at,
             capacity: s.capacity,
             reserved: s.reserved,
+            allowed_professions: s.allowed_professions || "ALL",
           }))
         : [],
     });
@@ -692,7 +712,7 @@ export default function Dashboard() {
                   >
                     {d?.sessions?.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.starts_at}–{s.ends_at} WITA)
+                        {s.event_date ? `${formatEventDate(s.event_date)} — ` : ""}{s.name} ({s.starts_at}–{s.ends_at} WITA)
                       </option>
                     ))}
                   </select>
@@ -717,6 +737,8 @@ export default function Dashboard() {
                   >
                     <option value="Dosen">Dosen</option>
                     <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
+                    <option value="Pimpinan">Pimpinan</option>
+                    <option value="Mahasiswa">Mahasiswa</option>
                   </select>
                 </label>
                 <label>
@@ -735,6 +757,7 @@ export default function Dashboard() {
                     <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
                     <option value="NPT">NPT (Non-PNS Tetap)</option>
                     <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
+                    <option value="Mahasiswa">Mahasiswa (Aktif)</option>
                   </select>
                 </label>
               </div>
@@ -924,78 +947,136 @@ export default function Dashboard() {
                   >
                     Pengaturan Sesi & Kapasitas
                   </span>
-                  <div style={{ display: "grid", gap: "8px" }}>
-                    {editScheduleModal.sessions.map((sess, idx) => (
-                      <div
-                        key={sess.id || idx}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
-                          gap: "8px",
-                          alignItems: "center",
-                          background: "#f8fafc",
-                          padding: "8px 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #e2e8f0",
-                        }}
-                      >
-                        <input
-                          value={sess.name}
-                          onChange={(e) => {
-                            const updated = [...editScheduleModal.sessions];
-                            updated[idx].name = e.target.value;
-                            setEditScheduleModal({
-                              ...editScheduleModal,
-                              sessions: updated,
-                            });
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {editScheduleModal.sessions.map((sess, idx) => {
+                      const allowedList = parseProfessions(sess.allowed_professions);
+                      return (
+                        <div
+                          key={sess.id || idx}
+                          style={{
+                            background: "#f8fafc",
+                            padding: "12px",
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            display: "grid",
+                            gap: "8px",
                           }}
-                          placeholder="Nama Sesi"
-                          required
-                        />
-                        <input
-                          value={sess.starts_at}
-                          onChange={(e) => {
-                            const updated = [...editScheduleModal.sessions];
-                            updated[idx].starts_at = e.target.value;
-                            setEditScheduleModal({
-                              ...editScheduleModal,
-                              sessions: updated,
-                            });
-                          }}
-                          placeholder="Mulai"
-                          required
-                        />
-                        <input
-                          value={sess.ends_at}
-                          onChange={(e) => {
-                            const updated = [...editScheduleModal.sessions];
-                            updated[idx].ends_at = e.target.value;
-                            setEditScheduleModal({
-                              ...editScheduleModal,
-                              sessions: updated,
-                            });
-                          }}
-                          placeholder="Selesai"
-                          required
-                        />
-                        <input
-                          type="number"
-                          value={sess.capacity}
-                          min={sess.reserved || 1}
-                          max={2000}
-                          onChange={(e) => {
-                            const updated = [...editScheduleModal.sessions];
-                            updated[idx].capacity = Number(e.target.value);
-                            setEditScheduleModal({
-                              ...editScheduleModal,
-                              sessions: updated,
-                            });
-                          }}
-                          placeholder="Kapasitas"
-                          required
-                        />
-                      </div>
-                    ))}
+                        >
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1.4fr 1fr 1fr 1fr",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              value={sess.name}
+                              onChange={(e) => {
+                                const updated = [...editScheduleModal.sessions];
+                                updated[idx].name = e.target.value;
+                                setEditScheduleModal({
+                                  ...editScheduleModal,
+                                  sessions: updated,
+                                });
+                              }}
+                              placeholder="Nama Sesi"
+                              required
+                            />
+                            <input
+                              value={sess.starts_at}
+                              onChange={(e) => {
+                                const updated = [...editScheduleModal.sessions];
+                                updated[idx].starts_at = e.target.value;
+                                setEditScheduleModal({
+                                  ...editScheduleModal,
+                                  sessions: updated,
+                                });
+                              }}
+                              placeholder="Mulai (08:30)"
+                              required
+                            />
+                            <input
+                              value={sess.ends_at}
+                              onChange={(e) => {
+                                const updated = [...editScheduleModal.sessions];
+                                updated[idx].ends_at = e.target.value;
+                                setEditScheduleModal({
+                                  ...editScheduleModal,
+                                  sessions: updated,
+                                });
+                              }}
+                              placeholder="Selesai (11:30)"
+                              required
+                            />
+                            <input
+                              type="number"
+                              value={sess.capacity}
+                              min={sess.reserved || 1}
+                              max={2000}
+                              onChange={(e) => {
+                                const updated = [...editScheduleModal.sessions];
+                                updated[idx].capacity = Number(e.target.value);
+                                setEditScheduleModal({
+                                  ...editScheduleModal,
+                                  sessions: updated,
+                                });
+                              }}
+                              placeholder="Kapasitas"
+                              required
+                            />
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              flexWrap: "wrap",
+                              fontSize: "11px",
+                              borderTop: "1px dashed #cbd5e1",
+                              paddingTop: "6px",
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, color: "#475569" }}>
+                              Hak Akses Role:
+                            </span>
+                            {PROFESSIONS.map((prof) => {
+                              const isAllowed = allowedList.includes(prof);
+                              return (
+                                <button
+                                  key={prof}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...editScheduleModal.sessions];
+                                    updated[idx].allowed_professions = toggleProfession(
+                                      sess.allowed_professions,
+                                      prof
+                                    );
+                                    setEditScheduleModal({
+                                      ...editScheduleModal,
+                                      sessions: updated,
+                                    });
+                                  }}
+                                  style={{
+                                    padding: "3px 8px",
+                                    fontSize: "11px",
+                                    borderRadius: "14px",
+                                    border: isAllowed ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                                    background: isAllowed ? "#eff6ff" : "#fff",
+                                    color: isAllowed ? "#1d4ed8" : "#94a3b8",
+                                    fontWeight: isAllowed ? 600 : 400,
+                                    cursor: "pointer",
+                                  }}
+                                  title={`Klik untuk ubah akses ${prof}`}
+                                >
+                                  {isAllowed ? `✓ ${prof}: Boleh` : `✕ ${prof}: Dilarang`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1234,6 +1315,7 @@ export default function Dashboard() {
                           starts_at: "08:30",
                           ends_at: "11:30",
                           capacity: 230,
+                          allowed_professions: "ALL",
                         },
                       ]);
                     }}
@@ -1244,82 +1326,137 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: "grid", gap: "10px" }}>
-                  {scheduleSessions.map((sess, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1.5fr 1fr 1fr 1fr auto",
-                        gap: "10px",
-                        alignItems: "center",
-                        background: "#fff",
-                        padding: "10px",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <input
-                        placeholder="Nama Sesi (misal: Sesi I)"
-                        value={sess.name}
-                        onChange={(e) => {
-                          const updated = [...scheduleSessions];
-                          updated[idx].name = e.target.value;
-                          setScheduleSessions(updated);
+                  {scheduleSessions.map((sess, idx) => {
+                    const allowedList = parseProfessions(sess.allowed_professions);
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: "#fff",
+                          padding: "12px",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
+                          display: "grid",
+                          gap: "8px",
                         }}
-                        required
-                      />
-                      <input
-                        placeholder="Mulai (08:30)"
-                        value={sess.starts_at}
-                        onChange={(e) => {
-                          const updated = [...scheduleSessions];
-                          updated[idx].starts_at = e.target.value;
-                          setScheduleSessions(updated);
-                        }}
-                        required
-                      />
-                      <input
-                        placeholder="Selesai (11:30)"
-                        value={sess.ends_at}
-                        onChange={(e) => {
-                          const updated = [...scheduleSessions];
-                          updated[idx].ends_at = e.target.value;
-                          setScheduleSessions(updated);
-                        }}
-                        required
-                      />
-                      <input
-                        type="number"
-                        placeholder="Kapasitas"
-                        min={1}
-                        max={2000}
-                        value={sess.capacity}
-                        onChange={(e) => {
-                          const updated = [...scheduleSessions];
-                          updated[idx].capacity = Number(e.target.value);
-                          setScheduleSessions(updated);
-                        }}
-                        required
-                      />
-                      {scheduleSessions.length > 1 ? (
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => {
-                            setScheduleSessions(
-                              scheduleSessions.filter((_, i) => i !== idx)
-                            );
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1.4fr 1fr 1fr 1fr auto",
+                            gap: "8px",
+                            alignItems: "center",
                           }}
-                          style={{ padding: "6px 10px", color: "#c53030" }}
-                          title="Hapus sesi"
                         >
-                          ✕
-                        </button>
-                      ) : (
-                        <div style={{ width: "32px" }} />
-                      )}
-                    </div>
-                  ))}
+                          <input
+                            placeholder="Nama Sesi (misal: Sesi I)"
+                            value={sess.name}
+                            onChange={(e) => {
+                              const updated = [...scheduleSessions];
+                              updated[idx].name = e.target.value;
+                              setScheduleSessions(updated);
+                            }}
+                            required
+                          />
+                          <input
+                            placeholder="Mulai (08:30)"
+                            value={sess.starts_at}
+                            onChange={(e) => {
+                              const updated = [...scheduleSessions];
+                              updated[idx].starts_at = e.target.value;
+                              setScheduleSessions(updated);
+                            }}
+                            required
+                          />
+                          <input
+                            placeholder="Selesai (11:30)"
+                            value={sess.ends_at}
+                            onChange={(e) => {
+                              const updated = [...scheduleSessions];
+                              updated[idx].ends_at = e.target.value;
+                              setScheduleSessions(updated);
+                            }}
+                            required
+                          />
+                          <input
+                            type="number"
+                            placeholder="Kapasitas"
+                            min={1}
+                            max={2000}
+                            value={sess.capacity}
+                            onChange={(e) => {
+                              const updated = [...scheduleSessions];
+                              updated[idx].capacity = Number(e.target.value);
+                              setScheduleSessions(updated);
+                            }}
+                            required
+                          />
+                          {scheduleSessions.length > 1 ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                setScheduleSessions(
+                                  scheduleSessions.filter((_, i) => i !== idx)
+                                );
+                              }}
+                              style={{ padding: "6px 10px", color: "#c53030" }}
+                              title="Hapus sesi"
+                            >
+                              ✕
+                            </button>
+                          ) : (
+                            <div style={{ width: "32px" }} />
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            flexWrap: "wrap",
+                            fontSize: "11px",
+                            borderTop: "1px dashed #e2e8f0",
+                            paddingTop: "6px",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, color: "#475569" }}>
+                            Hak Akses Role:
+                          </span>
+                          {PROFESSIONS.map((prof) => {
+                            const isAllowed = allowedList.includes(prof);
+                            return (
+                              <button
+                                key={prof}
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...scheduleSessions];
+                                  updated[idx].allowed_professions = toggleProfession(
+                                    sess.allowed_professions,
+                                    prof
+                                  );
+                                  setScheduleSessions(updated);
+                                }}
+                                style={{
+                                  padding: "3px 8px",
+                                  fontSize: "11px",
+                                  borderRadius: "14px",
+                                  border: isAllowed ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                                  background: isAllowed ? "#eff6ff" : "#fff",
+                                  color: isAllowed ? "#1d4ed8" : "#94a3b8",
+                                  fontWeight: isAllowed ? 600 : 400,
+                                  cursor: "pointer",
+                                }}
+                                title={`Klik untuk ubah akses ${prof}`}
+                              >
+                                {isAllowed ? `✓ ${prof}: Boleh` : `✕ ${prof}: Dilarang`}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1376,6 +1513,22 @@ export default function Dashboard() {
                               • <b>{s.name}</b> ({s.starts_at}–{s.ends_at} WITA):{" "}
                               <strong>{s.reserved}</strong>/{s.capacity} (
                               {s.remaining} sisa)
+                              {s.allowed_professions && s.allowed_professions !== "ALL" && (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginLeft: "6px",
+                                    padding: "1px 6px",
+                                    borderRadius: "4px",
+                                    background: "#e0e7ff",
+                                    color: "#3730a3",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  🎯 {s.allowed_professions}
+                                </span>
+                              )}
                             </span>
                           ))}
                         </div>

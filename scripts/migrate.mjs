@@ -19,12 +19,12 @@ async function migrate() {
     `);
 
     // 2. Cek apakah kolom schedule_id sudah ada di tabel academy_sessions
-    const [cols] = await db.query(`
+    const [colsSchedule] = await db.query(`
       SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'academy_sessions' AND COLUMN_NAME = 'schedule_id'
     `);
 
-    if (cols.length === 0) {
+    if (colsSchedule.length === 0) {
       console.log('-> Menambahkan kolom schedule_id ke tabel academy_sessions...');
       await db.query(`
         ALTER TABLE academy_sessions
@@ -33,13 +33,37 @@ async function migrate() {
       `);
     }
 
-    // 3. Jalankan seluruh perintah dari database/schema.sql secara berurutan
+    // 3. Cek apakah kolom allowed_professions sudah ada di tabel academy_sessions
+    const [colsAllowed] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'academy_sessions' AND COLUMN_NAME = 'allowed_professions'
+    `);
+
+    if (colsAllowed.length === 0) {
+      console.log('-> Menambahkan kolom allowed_professions ke tabel academy_sessions...');
+      await db.query(`
+        ALTER TABLE academy_sessions
+        ADD COLUMN allowed_professions VARCHAR(255) NULL DEFAULT 'ALL' AFTER ends_at
+      `);
+    }
+
+    // 4. Perlebar kolom nip pada tabel participants untuk mendukung NIM mahasiswa (sampai 30 char)
+    const [nipCol] = await db.query(`
+      SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'participants' AND COLUMN_NAME = 'nip'
+    `);
+    if (nipCol.length > 0 && Number(nipCol[0].CHARACTER_MAXIMUM_LENGTH) < 30) {
+      console.log('-> Menyesuaikan panjang kolom nip menjadi VARCHAR(30)...');
+      await db.query(`ALTER TABLE participants MODIFY COLUMN nip VARCHAR(30) NOT NULL`);
+    }
+
+    // 5. Jalankan seluruh perintah dari database/schema.sql secara berurutan
     const sql = await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8');
     for (const statement of sql.split(';').filter((s) => s.trim())) {
       await db.query(statement);
     }
 
-    // 4. Pastikan sesi lama terhubung ke jadwal default
+    // 6. Pastikan sesi lama terhubung ke jadwal default
     await db.query('UPDATE academy_sessions SET schedule_id = 1 WHERE schedule_id IS NULL');
 
     console.log('✓ Migrasi database berhasil diselesaikan.');
