@@ -323,27 +323,6 @@ export default function RegistrationForm({ role }) {
           <h2>{config.title}</h2>
           <p className="muted">{config.desc}</p>
 
-          {validSchedules.length > 0 && (
-            <div
-              style={{
-                margin: "14px 0 20px",
-                padding: "10px 14px",
-                background: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                borderRadius: "10px",
-                color: "#1e40af",
-                fontSize: "12px",
-                lineHeight: 1.5,
-              }}
-            >
-              <b>
-                📅 Jadwal Terbuka:{" "}
-                {validSchedules.map((sc) => formatEventDate(sc.event_date)).join(" & ")}
-              </b>{" "}
-              di Arsyad Rasyid Lecture Theater Unhas.
-            </div>
-          )}
-
           {error && (
             <p className="alert" role="alert">
               {error}
