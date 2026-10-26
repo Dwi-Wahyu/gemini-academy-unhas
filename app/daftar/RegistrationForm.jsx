@@ -26,19 +26,16 @@ function isSessionAllowed(session, prof) {
 }
 
 export default function RegistrationForm({ role }) {
-  const [schedule, setSchedule] = useState(null),
-    [sessions, setSessions] = useState([]),
+  const [schedules, setSchedules] = useState([]),
     [units, setUnits] = useState([]),
     [error, setError] = useState(""),
-    [status, setStatus] = useState("Memuat kuota sesi…"),
+    [status, setStatus] = useState("Memuat jadwal & kuota…"),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState(""),
     [selectedUnit, setSelectedUnit] = useState(""),
     [employmentStatus, setEmploymentStatus] = useState(
       role === "Mahasiswa" ? "Mahasiswa" : "PNS"
     );
-
-  const targetDate = role === "Dosen" || role === "Pimpinan" ? "2026-10-30" : "2026-10-31";
 
   async function refresh() {
     try {
@@ -54,38 +51,36 @@ export default function RegistrationForm({ role }) {
       if (!rUnits.ok) throw Error(dUnits.error);
 
       const allScheds = dSessions.schedules || (dSessions.schedule ? [dSessions.schedule] : []);
-      // Temukan jadwal yang sesuai dengan tanggal kategori ini
-      const matchedSched = allScheds.find((s) => s.event_date === targetDate) || dSessions.schedule || null;
-
-      // Ambil sesi khusus jadwal ini
-      let sList = [];
-      if (matchedSched) {
-        const rTarget = await fetch(`/api/sessions?schedule_id=${matchedSched.id}`, { cache: "no-store" });
-        const dTarget = await rTarget.json();
-        sList = dTarget.sessions || [];
-      } else {
-        sList = dSessions.sessions || [];
-      }
-
-      setSchedule(matchedSched);
-      setSessions(sList);
+      setSchedules(allScheds);
       setUnits(dUnits);
       setStatus("");
 
+      // Kumpulkan semua sesi yang valid untuk role ini dari seluruh jadwal aktif
+      const validSess = allScheds
+        .filter((sc) => sc.is_active)
+        .flatMap((sc) =>
+          (sc.sessions || [])
+            .filter((s) => isSessionAllowed(s, role))
+            .map((s) => ({
+              ...s,
+              schedule_title: sc.title,
+              event_date: sc.event_date,
+              location: sc.location,
+            }))
+        );
+
       setSelected((v) => {
-        const found = sList.find((s) => String(s.id) === v);
-        if (found && found.remaining > 0 && isSessionAllowed(found, role)) {
-          return v;
-        }
-        const first = sList.find((s) => s.remaining > 0 && isSessionAllowed(s, role));
-        return first ? String(first.id) : "";
+        const found = validSess.find((s) => String(s.id) === v);
+        if (found && found.remaining > 0) return v;
+        const firstAvailable = validSess.find((s) => s.remaining > 0);
+        return firstAvailable ? String(firstAvailable.id) : "";
       });
 
       setSelectedUnit((v) =>
         dUnits.some((u) => u.name === v && u.remaining > 0) ? v : "",
       );
     } catch {
-      setStatus("Kuota belum dapat diperbarui. Coba beberapa saat lagi.");
+      setStatus("Jadwal dan kuota belum dapat diperbarui. Coba beberapa saat lagi.");
     }
   }
 
@@ -94,6 +89,29 @@ export default function RegistrationForm({ role }) {
     const t = setInterval(refresh, 15000);
     return () => clearInterval(t);
   }, [role]);
+
+  // Saring semua jadwal aktif yang memiliki minimal 1 sesi yang valid untuk role ini
+  const validSchedules = schedules
+    .filter((sc) => sc.is_active)
+    .map((sc) => {
+      const roleSessions = (sc.sessions || []).filter((s) => isSessionAllowed(s, role));
+      return {
+        ...sc,
+        validSessions: roleSessions,
+      };
+    })
+    .filter((sc) => sc.validSessions.length > 0)
+    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+
+  // Kumpulkan semua sesi valid dari seluruh jadwal untuk opsi dropdown form
+  const allValidSessions = validSchedules.flatMap((sc) =>
+    sc.validSessions.map((s) => ({
+      ...s,
+      schedule_title: sc.title,
+      event_date: sc.event_date,
+      location: sc.location,
+    }))
+  );
 
   async function submit(e) {
     e.preventDefault();
@@ -124,7 +142,6 @@ export default function RegistrationForm({ role }) {
       eyebrow: "01 / JALUR PIMPINAN UNIT KERJA",
       title: "Formulir Pendaftaran",
       desc: "Khusus Rektorat, Dekanat, Direktur Sekolah, Ketua Lembaga, dan Kepala Biro.",
-      dateLabel: "Jumat, 30 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
@@ -137,7 +154,6 @@ export default function RegistrationForm({ role }) {
       eyebrow: "01 / JALUR DOSEN",
       title: "Formulir Pendaftaran",
       desc: "Khusus Tenaga Pendidik / Dosen Tetap Universitas Hasanuddin.",
-      dateLabel: "Jumat, 30 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
@@ -150,7 +166,6 @@ export default function RegistrationForm({ role }) {
       eyebrow: "01 / JALUR TENAGA KEPENDIDIKAN",
       title: "Formulir Pendaftaran",
       desc: "Khusus Tenaga Kependidikan, Staf Administrasi, Laboran, dan Pustakawan Unhas.",
-      dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
@@ -163,7 +178,6 @@ export default function RegistrationForm({ role }) {
       eyebrow: "01 / JALUR MAHASISWA",
       title: "Formulir Pendaftaran",
       desc: "Khusus Mahasiswa Aktif Diploma, Sarjana, dan Pascasarjana Universitas Hasanuddin.",
-      dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIM (Nomor Induk Mahasiswa) *",
       nipPlaceholder: "Masukkan NIM (contoh: H071191001)",
       nipPattern: "[A-Za-z0-9/_-]{4,30}",
@@ -175,12 +189,31 @@ export default function RegistrationForm({ role }) {
   };
 
   const config = roleConfigs[role] || roleConfigs.Dosen;
-  const full = sessions.length > 0 && sessions.every((s) => s.remaining === 0);
+  const isAllFull = allValidSessions.length > 0 && allValidSessions.every((s) => s.remaining === 0);
 
   return (
     <div>
+      <div style={{ marginBottom: "20px" }}>
+        <Link
+          href="/"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            color: "#64748b",
+            fontSize: "13px",
+            fontWeight: 600,
+            textDecoration: "none",
+          }}
+        >
+          ← Kembali ke Pilihan Jalur
+        </Link>
+      </div>
+
       <div className="registration-grid">
+        {/* BAGIAN KIRI: MENAMPILKAN SEMUA JADWAL DENGAN SESI VALID UNTUK ROLE INI */}
         <section className="intro">
+          <div className="eyebrow">{config.eyebrow}</div>
           <h1 style={{ fontSize: "46px", marginTop: "16px" }}>
             {config.title}
             <br />
@@ -188,92 +221,95 @@ export default function RegistrationForm({ role }) {
           </h1>
           <p className="lead">{config.desc}</p>
 
-          {schedule && (
-            <div
-              style={{
-                margin: "20px 0",
-                padding: "18px 20px",
-                background: "rgba(255, 255, 255, 0.8)",
-                border: "1px solid rgba(226, 232, 240, 0.95)",
-                borderRadius: "14px",
-                boxShadow: "0 4px 15px -2px rgba(15, 23, 42, 0.05)",
-              }}
-            >
+          {validSchedules.map((sc) => (
+            <div key={sc.id} style={{ marginBottom: "26px" }}>
               <div
                 style={{
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  color: "#1e3a8a",
-                  lineHeight: 1.45,
-                  marginBottom: "10px",
+                  margin: "18px 0 14px",
+                  padding: "16px 18px",
+                  background: "rgba(255, 255, 255, 0.8)",
+                  border: "1px solid rgba(226, 232, 240, 0.95)",
+                  borderRadius: "14px",
+                  boxShadow: "0 4px 15px -2px rgba(15, 23, 42, 0.05)",
                 }}
               >
-                {schedule.title}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "14px",
-                  fontSize: "12.5px",
-                  color: "#334155",
-                }}
-              >
-                <div>
-                  <b>{formatEventDate(schedule.event_date)}</b>
-                </div>
-                <div>
-                  <b>{schedule.location}</b>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="session-list">
-            {sessions.map((s, i) => {
-              const allowed = isSessionAllowed(s, role);
-              return (
-                <article
-                  className="session-card"
-                  key={s.id}
+                <div
                   style={{
-                    opacity: allowed ? 1 : 0.45,
-                    border: allowed && selected === String(s.id)
-                      ? "2px solid #567bda"
-                      : "1px solid #e0e7f1",
-                    background: allowed && selected === String(s.id)
-                      ? "#f8faff"
-                      : "#fff",
-                    transition: "all 0.2s",
+                    fontSize: "13.5px",
+                    fontWeight: 700,
+                    color: "#1e3a8a",
+                    lineHeight: 1.45,
+                    marginBottom: "8px",
                   }}
                 >
-                  <span className="icon">{i ? "◷" : "☀"}</span>
-                  <div style={{ flex: 1 }}>
-                    <b>{s.name}</b>
-                    <p>
-                      {s.starts_at}–{s.ends_at} WITA
-                    </p>
+                  {sc.title}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "14px",
+                    fontSize: "12px",
+                    color: "#334155",
+                  }}
+                >
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <span>📅</span>
+                    <b>{formatEventDate(sc.event_date)}</b>
                   </div>
-                  <span
-                    className="badge"
-                    style={{
-                      background: s.remaining > 0 ? (allowed ? "#edf7f2" : "#f1f5f9") : "#fef2f2",
-                      color: s.remaining > 0 ? (allowed ? "#3a8c73" : "#64748b") : "#dc2626",
-                    }}
-                  >
-                    {s.remaining > 0
-                      ? (allowed ? `${s.remaining} kursi tersisa` : "Tidak tersedia")
-                      : "Penuh"}
-                  </span>
-                </article>
-              );
-            })}
-            {!sessions.length && (
-              <div style={{ padding: "16px", color: "#64748b", fontSize: "14px" }}>
-                Belum ada sesi jadwal yang dibuka untuk kategori ini.
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <span>📍</span>
+                    <b>{sc.location}</b>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+
+              <div className="session-list" style={{ marginTop: "10px" }}>
+                {sc.validSessions.map((s, i) => {
+                  const isSelected = selected === String(s.id);
+                  return (
+                    <article
+                      className="session-card"
+                      key={s.id}
+                      onClick={() => {
+                        if (s.remaining > 0) setSelected(String(s.id));
+                      }}
+                      style={{
+                        cursor: s.remaining > 0 ? "pointer" : "not-allowed",
+                        border: isSelected ? "2px solid #567bda" : "1px solid #e0e7f1",
+                        background: isSelected ? "#f8faff" : "#fff",
+                        boxShadow: isSelected ? "0 4px 14px rgba(86, 123, 218, 0.15)" : "none",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      <span className="icon">{i % 2 === 0 ? "☀" : "◷"}</span>
+                      <div style={{ flex: 1 }}>
+                        <b>{s.name}</b>
+                        <p>
+                          {s.starts_at}–{s.ends_at} WITA
+                        </p>
+                      </div>
+                      <span
+                        className="badge"
+                        style={{
+                          background: s.remaining > 0 ? "#edf7f2" : "#fef2f2",
+                          color: s.remaining > 0 ? "#3a8c73" : "#dc2626",
+                        }}
+                      >
+                        {s.remaining > 0 ? `${s.remaining} kursi tersisa` : "Penuh"}
+                      </span>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {!validSchedules.length && (
+            <div style={{ padding: "16px", color: "#64748b", fontSize: "14px" }}>
+              {status || `Belum ada jadwal kegiatan yang dibuka untuk kategori ${role} saat ini.`}
+            </div>
+          )}
 
           <p className="note">
             ⓘ Kuota awal 230 peserta per sesi. Sesi penuh atau di luar hak akses kategori otomatis tidak dapat dipilih.
@@ -281,9 +317,32 @@ export default function RegistrationForm({ role }) {
           <div className="decor">✦</div>
         </section>
 
+        {/* BAGIAN KANAN: FORMULIR PENDAFTARAN */}
         <section className="card">
+          <div className="eyebrow">{config.eyebrow}</div>
           <h2>{config.title}</h2>
           <p className="muted">{config.desc}</p>
+
+          {validSchedules.length > 0 && (
+            <div
+              style={{
+                margin: "14px 0 20px",
+                padding: "10px 14px",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: "10px",
+                color: "#1e40af",
+                fontSize: "12px",
+                lineHeight: 1.5,
+              }}
+            >
+              <b>
+                📅 Jadwal Terbuka:{" "}
+                {validSchedules.map((sc) => formatEventDate(sc.event_date)).join(" & ")}
+              </b>{" "}
+              di Arsyad Rasyid Lecture Theater Unhas.
+            </div>
+          )}
 
           {error && (
             <p className="alert" role="alert">
@@ -395,6 +454,7 @@ export default function RegistrationForm({ role }) {
               <small>Boleh dikosongkan bila belum memiliki email Unhas.</small>
             </label>
 
+            {/* PILIHAN SESI: MENAMPILKAN SEMUA JADWAL & SESI YANG VALID UNTUK ROLE INI */}
             <label>
               Pilihan Sesi Pelatihan *
               <select
@@ -404,29 +464,30 @@ export default function RegistrationForm({ role }) {
                 onChange={(e) => setSelected(e.target.value)}
               >
                 <option value="">Pilih sesi yang tersedia</option>
-                {sessions.map((s) => {
-                  const allowed = isSessionAllowed(s, role);
+                {allValidSessions.map((s) => {
                   const isFull = !s.remaining;
-                  const isDisabled = isFull || !allowed;
-                  const eventDateFormatted = formatEventDate(s.event_date || schedule?.event_date);
+                  const eventDateFormatted = formatEventDate(s.event_date);
                   return (
-                    <option key={s.id} value={s.id} disabled={isDisabled}>
-                      {eventDateFormatted ? `${eventDateFormatted} — ` : ""}{s.name} ({s.starts_at}–{s.ends_at} WITA){isFull ? " [PENUH]" : (!allowed ? " [Dibatasi]" : "")}
+                    <option key={s.id} value={s.id} disabled={isFull}>
+                      {eventDateFormatted ? `${eventDateFormatted} — ` : ""}{s.name} ({s.starts_at}–{s.ends_at} WITA){isFull ? " [PENUH]" : ""}
                     </option>
                   );
                 })}
               </select>
+              <small style={{ color: "#1e40af", marginTop: "4px", display: "block" }}>
+                ℹ Menampilkan seluruh jadwal dan sesi yang dibuka untuk kategori {role}.
+              </small>
             </label>
 
             <p className="muted" role="status">
-              {full ? "Semua sesi pada jadwal ini penuh." : status}
+              {isAllFull ? "Semua sesi pelatihan untuk kategori ini sudah penuh." : status}
             </p>
 
             <button
               className="primary"
-              disabled={busy || full || !sessions.length || !selected}
+              disabled={busy || isAllFull || !allValidSessions.length || !selected}
             >
-              {busy ? "Menyimpan pendaftaran…" : `Mendaftar ↗`}
+              {busy ? "Menyimpan pendaftaran…" : `Daftar sebagai ${role} ↗`}
             </button>
             <p className="privacy">
               Data digunakan untuk administrasi kegiatan pelatihan Gemini Academy Unhas.

@@ -32,13 +32,15 @@ async function route(req, ctx) {
       const targetSchedule = sid
         ? allScheds.find((s) => String(s.id) === sid)
         : ((await getNearestSchedule()) || activeScheds[0] || null);
-      const sessionList = targetSchedule
-        ? await sessions(targetSchedule.id)
-        : (sid ? await sessions(sid) : []);
+      const allSessionsList = await sessions();
+      const sessionList = sid
+        ? (targetSchedule ? await sessions(targetSchedule.id) : await sessions(sid))
+        : allSessionsList;
       return json({
         schedule: targetSchedule || null,
         schedules: activeScheds,
         sessions: sessionList,
+        all_sessions: allSessionsList,
       });
     }
     if (req.method === "GET" && key === "schedules")
