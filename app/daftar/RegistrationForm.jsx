@@ -122,7 +122,7 @@ export default function RegistrationForm({ role }) {
   const roleConfigs = {
     Pimpinan: {
       eyebrow: "01 / JALUR PIMPINAN UNIT KERJA",
-      title: "Pendaftaran Pimpinan",
+      title: "Formulir Pendaftaran",
       desc: "Khusus Rektorat, Dekanat, Direktur Sekolah, Ketua Lembaga, dan Kepala Biro.",
       dateLabel: "Jumat, 30 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
@@ -136,7 +136,7 @@ export default function RegistrationForm({ role }) {
     },
     Dosen: {
       eyebrow: "01 / JALUR DOSEN",
-      title: "Pendaftaran Dosen",
+      title: "Formulir Pnedaftaran",
       desc: "Khusus Tenaga Pendidik / Dosen Tetap Universitas Hasanuddin.",
       dateLabel: "Jumat, 30 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
@@ -150,7 +150,7 @@ export default function RegistrationForm({ role }) {
     },
     Tendik: {
       eyebrow: "01 / JALUR TENAGA KEPENDIDIKAN",
-      title: "Pendaftaran Tendik",
+      title: "Formulir Pnedaftaran",
       desc: "Khusus Tenaga Kependidikan, Staf Administrasi, Laboran, dan Pustakawan Unhas.",
       dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
@@ -164,7 +164,7 @@ export default function RegistrationForm({ role }) {
     },
     Mahasiswa: {
       eyebrow: "01 / JALUR MAHASISWA",
-      title: "Pendaftaran Mahasiswa",
+      title: "Formulir Pnedaftaran",
       desc: "Khusus Mahasiswa Aktif Diploma, Sarjana, dan Pascasarjana Universitas Hasanuddin.",
       dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIM (Nomor Induk Mahasiswa) *",
@@ -183,26 +183,8 @@ export default function RegistrationForm({ role }) {
 
   return (
     <div>
-      <div style={{ marginBottom: "20px" }}>
-        <Link
-          href="/"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            color: "#64748b",
-            fontSize: "13px",
-            fontWeight: 600,
-            textDecoration: "none",
-          }}
-        >
-          ← Kembali ke Pilihan Jalur
-        </Link>
-      </div>
-
       <div className="registration-grid">
         <section className="intro">
-          <div className="eyebrow">{config.eyebrow}</div>
           <h1 style={{ fontSize: "46px", marginTop: "16px" }}>
             {config.title}
             <br />
@@ -306,29 +288,8 @@ export default function RegistrationForm({ role }) {
         </section>
 
         <section className="card">
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-            <span style={{ fontSize: "24px" }}>{config.icon}</span>
-            <div className="eyebrow" style={{ margin: 0 }}>
-              FORMULIR PENDAFTARAN RESMI
-            </div>
-          </div>
           <h2>{config.title}</h2>
           <p className="muted">{config.desc}</p>
-
-          <div
-            style={{
-              margin: "14px 0 20px",
-              padding: "10px 14px",
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              borderRadius: "10px",
-              color: "#1e40af",
-              fontSize: "12px",
-              lineHeight: 1.5,
-            }}
-          >
-            <b>📅 Terjadwal Khusus: {config.dateLabel}</b> di Arsyad Rasyid Lecture Theater Unhas.
-          </div>
 
           {error && (
             <p className="alert" role="alert">
@@ -471,7 +432,7 @@ export default function RegistrationForm({ role }) {
               className="primary"
               disabled={busy || full || !sessions.length || !selected}
             >
-              {busy ? "Menyimpan pendaftaran…" : `Daftar sebagai ${role} ↗`}
+              {busy ? "Menyimpan pendaftaran…" : `Mendaftar ↗`}
             </button>
             <p className="privacy">
               Data digunakan untuk administrasi kegiatan pelatihan Gemini Academy Unhas.
