@@ -16,3 +16,28 @@ test('Excel mempertahankan identifier, teks formula, tanggal WITA dan semua bari
  assert.equal(sheet.views[0].ySplit,1);assert.ok(sheet.autoFilter);
 });
 test('Excel tanpa peserta tetap berisi header', async()=>{const b=new ExcelJS.Workbook();await b.xlsx.load(await participantWorkbook([]));assert.equal(b.getWorksheet('Peserta').rowCount,1);});
+test('Excel mahasiswa menyesuaikan header NIM dan berkas KTM', async () => {
+  const mhsRecord = {
+    name: 'Andi',
+    nip: 'H071191001',
+    phone: '081234567890',
+    unit: 'Fakultas MIPA',
+    email: 'andi@student.unhas.ac.id',
+    profession: 'Mahasiswa',
+    employment_status: 'Mahasiswa',
+    letter_file: 'ktm.pdf',
+    session: 'Sesi I (Pagi)',
+    starts_at: '08:30',
+    ends_at: '11:30',
+    created_at: '2026-10-23 20:30:00',
+    registration_code: 'test-mhs-code',
+  };
+  const buffer = await participantWorkbook([mhsRecord], 'Mahasiswa');
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(buffer);
+  const sheet = book.getWorksheet('Peserta Mahasiswa');
+  assert.equal(sheet.getCell('C1').value, 'NIM');
+  assert.equal(sheet.getCell('C2').value, 'H071191001');
+  assert.equal(sheet.getCell('L1').value, 'Status Mahasiswa');
+  assert.equal(sheet.getCell('M1').value, 'KTM / Surat Keterangan');
+});

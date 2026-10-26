@@ -43,7 +43,6 @@ export default function HomeLanding() {
     {
       id: "pimpinan",
       role: "Pimpinan",
-      icon: "🏛️",
       title: "Pimpinan Unit Kerja",
       badge: "Hari I — Jumat, 30 Okt 2026",
       badgeBg: "#eff6ff",
@@ -57,7 +56,6 @@ export default function HomeLanding() {
     {
       id: "dosen",
       role: "Dosen",
-      icon: "👨‍🏫",
       title: "Dosen / Pendidik",
       badge: "Hari I — Jumat, 30 Okt 2026",
       badgeBg: "#eff6ff",
@@ -71,7 +69,6 @@ export default function HomeLanding() {
     {
       id: "tendik",
       role: "Tendik",
-      icon: "💼",
       title: "Tenaga Kependidikan",
       badge: "Hari II — Sabtu, 31 Okt 2026",
       badgeBg: "#ecfdf5",
@@ -85,7 +82,6 @@ export default function HomeLanding() {
     {
       id: "mahasiswa",
       role: "Mahasiswa",
-      icon: "🎓",
       title: "Mahasiswa",
       badge: "Hari II — Sabtu, 31 Okt 2026",
       badgeBg: "#f5f3ff",
@@ -137,18 +133,15 @@ export default function HomeLanding() {
             color: "#334155",
           }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <span>📅</span>
+          <div>
             <b>Jumat, 30 Okt 2026</b> (Dosen & Pimpinan)
           </div>
           <span style={{ color: "#cbd5e1" }}>•</span>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <span>📅</span>
+          <div>
             <b>Sabtu, 31 Okt 2026</b> (Tendik & Mahasiswa)
           </div>
           <span style={{ color: "#cbd5e1" }}>•</span>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-            <span>📍</span>
+          <div>
             <b>Arsyad Rasyid Lecture Theater</b>
           </div>
         </div>
@@ -179,8 +172,7 @@ export default function HomeLanding() {
               }}
             >
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
-                  <span style={{ fontSize: "36px" }}>{r.icon}</span>
+                <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "14px" }}>
                   <span
                     style={{
                       fontSize: "11px",
@@ -280,9 +272,9 @@ export default function HomeLanding() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                   <div>
                     <b style={{ color: "#1e3a8a", fontSize: "14px", display: "block" }}>
-                      📅 {formatEventDate(sc.event_date)}
+                      {formatEventDate(sc.event_date)}
                     </b>
-                    <small style={{ color: "#64748b" }}>📍 {sc.location}</small>
+                    <small style={{ color: "#64748b" }}>Lokasi: {sc.location}</small>
                   </div>
                   <span
                     style={{

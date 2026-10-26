@@ -47,6 +47,7 @@ export default function Dashboard() {
     [schedules, setSchedules] = useState([]),
     [filterSchedule, setFilterSchedule] = useState(""),
     [filterSession, setFilterSession] = useState(""),
+    [filterProfession, setFilterProfession] = useState(""),
     [tab, setTab] = useState("participants"),
     [error, setError] = useState(""),
     [unitMsg, setUnitMsg] = useState(""),
@@ -104,10 +105,34 @@ export default function Dashboard() {
       setD(jP);
       if (jP.schedules) setSchedules(jP.schedules);
       setQuery(q);
+      const urlParams = new URLSearchParams(q);
+      if (urlParams.has("profession")) {
+        setFilterProfession(urlParams.get("profession") || "");
+      } else {
+        setFilterProfession("");
+      }
+      if (urlParams.has("schedule")) {
+        setFilterSchedule(urlParams.get("schedule") || "");
+      }
+      if (urlParams.has("session")) {
+        setFilterSession(urlParams.get("session") || "");
+      }
       if (rU.ok) setUnits(await rU.json());
     } catch (e) {
       setError(e.message);
     }
+  }
+
+  function switchProfession(newProf) {
+    setFilterProfession(newProf);
+    const p = new URLSearchParams(query);
+    if (newProf) {
+      p.set("profession", newProf);
+    } else {
+      p.delete("profession");
+    }
+    p.set("page", "1");
+    load(p.toString());
   }
 
   useEffect(() => {
@@ -378,7 +403,9 @@ export default function Dashboard() {
       nip: p.nip,
       unit: p.unit,
       profession: p.profession || "Dosen",
-      employment_status: p.employment_status || "PNS",
+      employment_status:
+        p.employment_status ||
+        (p.profession === "Mahasiswa" ? "Mahasiswa" : "PNS"),
       phone: p.phone,
       email: p.email || "",
       academy_session_id: p.academy_session_id,
@@ -528,10 +555,17 @@ export default function Dashboard() {
             <dl>
               {Object.entries({
                 "Nama Lengkap": detail.name,
-                NIP: detail.nip,
+                [detail.profession === "Mahasiswa"
+                  ? "NIM (Nomor Induk Mahasiswa)"
+                  : "NIP (Nomor Induk Pegawai)"]: detail.nip,
                 "Unit Kerja": detail.unit,
                 "Kategori Profesi": detail.profession || "-",
-                "Status Kepegawaian": detail.employment_status || "-",
+                [detail.profession === "Mahasiswa"
+                  ? "Status Mahasiswa"
+                  : "Status Kepegawaian"]:
+                  detail.profession === "Mahasiswa"
+                    ? detail.employment_status || "Mahasiswa Aktif"
+                    : detail.employment_status || "-",
                 "Nomor WhatsApp": detail.phone,
                 "Email Unhas": detail.email || "Belum memiliki",
                 "Jadwal / Program": detail.schedule_title || "Gemini Academy",
@@ -555,7 +589,11 @@ export default function Dashboard() {
               ))}
               {detail.letter_file && (
                 <div>
-                  <dt>Surat Usulan Pimpinan Unit Kerja</dt>
+                  <dt>
+                    {detail.profession === "Mahasiswa"
+                      ? "Kartu Tanda Mahasiswa (KTM) / Bukti Aktif Kuliah"
+                      : "Surat Usulan Pimpinan Unit Kerja"}
+                  </dt>
                   <dd>
                     <a
                       href={`/api/participants/${detail.id}/letter`}
@@ -568,7 +606,9 @@ export default function Dashboard() {
                         padding: "8px 14px",
                       }}
                     >
-                      Buka / Unduh Surat Usulan ↗
+                      {detail.profession === "Mahasiswa"
+                        ? "Buka / Unduh Berkas KTM ↗"
+                        : "Buka / Unduh Surat Usulan ↗"}
                     </a>
                   </dd>
                 </div>
@@ -656,18 +696,36 @@ export default function Dashboard() {
                 />
               </label>
               <label>
-                NIP * (18 digit angka)
+                {editModal.profession === "Mahasiswa"
+                  ? "NIM (Nomor Induk Mahasiswa) *"
+                  : "NIP (Nomor Induk Pegawai) * (18 digit angka)"}
                 <input
                   name="nip"
                   required
-                  pattern="[0-9]{18}"
-                  maxLength={18}
-                  inputMode="numeric"
+                  pattern={
+                    editModal.profession === "Mahasiswa"
+                      ? "[A-Za-z0-9/_-]{4,30}"
+                      : "[0-9]{18}"
+                  }
+                  maxLength={editModal.profession === "Mahasiswa" ? 30 : 18}
+                  inputMode={
+                    editModal.profession === "Mahasiswa" ? "text" : "numeric"
+                  }
+                  placeholder={
+                    editModal.profession === "Mahasiswa"
+                      ? "Contoh: H071191001"
+                      : "18 digit angka NIP"
+                  }
                   value={editModal.nip}
                   onChange={(e) =>
                     setEditModal({ ...editModal, nip: e.target.value })
                   }
                 />
+                <small style={{ color: "#64748b" }}>
+                  {editModal.profession === "Mahasiswa"
+                    ? "Format: 4–30 karakter alfanumerik (NIM Mahasiswa)."
+                    : "Wajib tepat 18 digit angka tanpa spasi."}
+                </small>
               </label>
               <div
                 style={{
@@ -731,9 +789,20 @@ export default function Dashboard() {
                     name="profession"
                     required
                     value={editModal.profession}
-                    onChange={(e) =>
-                      setEditModal({ ...editModal, profession: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const newProf = e.target.value;
+                      let newEmp = editModal.employment_status;
+                      if (newProf === "Mahasiswa") {
+                        newEmp = "Mahasiswa";
+                      } else if (newEmp === "Mahasiswa") {
+                        newEmp = "PNS";
+                      }
+                      setEditModal({
+                        ...editModal,
+                        profession: newProf,
+                        employment_status: newEmp,
+                      });
+                    }}
                   >
                     <option value="Dosen">Dosen</option>
                     <option value="Tendik">Tenaga Kependidikan (Tendik)</option>
@@ -742,7 +811,9 @@ export default function Dashboard() {
                   </select>
                 </label>
                 <label>
-                  Status Kepegawaian *
+                  {editModal.profession === "Mahasiswa"
+                    ? "Status Mahasiswa *"
+                    : "Status Kepegawaian *"}
                   <select
                     name="employment_status"
                     required
@@ -754,10 +825,19 @@ export default function Dashboard() {
                       })
                     }
                   >
-                    <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
-                    <option value="NPT">NPT (Non-PNS Tetap)</option>
-                    <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
-                    <option value="Mahasiswa">Mahasiswa (Aktif)</option>
+                    {editModal.profession === "Mahasiswa" ? (
+                      <>
+                        <option value="Mahasiswa">Mahasiswa Aktif</option>
+                        <option value="Aktif">Aktif</option>
+                        <option value="Non-ASN">Non-ASN</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="PNS">PNS (Pegawai Negeri Sipil)</option>
+                        <option value="NPT">NPT (Non-PNS Tetap)</option>
+                        <option value="NPTT">NPTT (Non-PNS Tidak Tetap)</option>
+                      </>
+                    )}
                   </select>
                 </label>
               </div>
@@ -794,7 +874,9 @@ export default function Dashboard() {
                 </label>
               </div>
               <label>
-                Ganti Berkas Surat Usulan (Format PDF, Maks 5 MB)
+                {editModal.profession === "Mahasiswa"
+                  ? "Ganti Berkas KTM / Bukti Mahasiswa Aktif (Format PDF, Maks 5 MB)"
+                  : "Ganti Berkas Surat Usulan (Format PDF, Maks 5 MB)"}
                 <input
                   type="file"
                   name="letter"
@@ -1495,7 +1577,7 @@ export default function Dashboard() {
                         <b style={{ color: "#1e3a8a" }}>
                           {formatEventDate(sc.event_date)}
                         </b>
-                        <small>📍 {sc.location}</small>
+                        <small>Lokasi: {sc.location}</small>
                       </td>
                       <td>
                         <div
@@ -1526,7 +1608,7 @@ export default function Dashboard() {
                                     fontWeight: 600,
                                   }}
                                 >
-                                  🎯 {s.allowed_professions}
+                                  Akses: {s.allowed_professions}
                                 </span>
                               )}
                             </span>
@@ -1748,17 +1830,28 @@ export default function Dashboard() {
         <>
           <div className="stats">
             <article>
-              <span>Total pendaftar</span>
-              <strong>{d.all}</strong>
+              <span>
+                {filterProfession
+                  ? `Peserta ${filterProfession}`
+                  : "Total Pendaftar"}
+              </span>
+              <strong>
+                {filterProfession
+                  ? d.profession_counts?.[filterProfession] ?? d.total
+                  : d.all}
+              </strong>
               <small>
-                dari{" "}
-                {(filterSchedule
-                  ? d.sessions.filter(
-                      (s) => String(s.schedule_id) === String(filterSchedule)
-                    )
-                  : d.sessions
-                ).reduce((a, s) => a + (Number(s.capacity) || 0), 0)}{" "}
-                kursi
+                {filterProfession
+                  ? `dari total ${d.all} seluruh pendaftar`
+                  : `dari ${
+                      (filterSchedule
+                        ? d.sessions.filter(
+                            (s) =>
+                              String(s.schedule_id) === String(filterSchedule)
+                          )
+                        : d.sessions
+                      ).reduce((a, s) => a + (Number(s.capacity) || 0), 0)
+                    } kursi`}
               </small>
             </article>
             {(filterSchedule
@@ -1780,14 +1873,84 @@ export default function Dashboard() {
               </article>
             ))}
           </div>
+
           <section className="card table-card">
+            {/* TAB SELEKSI KATEGORI PROFESI (TIDAK DIGABUNG) */}
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+                marginBottom: "18px",
+                padding: "8px",
+                background: "#f8fafc",
+                borderRadius: "10px",
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              {[
+                { key: "", label: "Semua Peserta" },
+                { key: "Dosen", label: "Dosen" },
+                { key: "Tendik", label: "Tenaga Kependidikan" },
+                { key: "Pimpinan", label: "Pimpinan" },
+                { key: "Mahasiswa", label: "Mahasiswa" },
+              ].map((prof) => {
+                const isActive = filterProfession === prof.key;
+                const count =
+                  prof.key === ""
+                    ? d?.all || 0
+                    : d?.profession_counts?.[prof.key] ?? 0;
+                return (
+                  <button
+                    key={prof.key}
+                    type="button"
+                    onClick={() => switchProfession(prof.key)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 14px",
+                      fontSize: "13px",
+                      fontWeight: isActive ? 600 : 500,
+                      borderRadius: "8px",
+                      border: isActive
+                        ? "1px solid #2563eb"
+                        : "1px solid transparent",
+                      background: isActive ? "#ffffff" : "transparent",
+                      color: isActive ? "#1d4ed8" : "#475569",
+                      boxShadow: isActive
+                        ? "0 1px 3px rgba(0,0,0,0.08)"
+                        : "none",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span>{prof.label}</span>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        padding: "2px 7px",
+                        borderRadius: "12px",
+                        background: isActive ? "#eff6ff" : "#e2e8f0",
+                        color: isActive ? "#1e40af" : "#64748b",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <form
               className="filters"
               onSubmit={(e) => {
                 e.preventDefault();
-                load(
-                  new URLSearchParams(new FormData(e.currentTarget)).toString(),
-                );
+                const fd = new FormData(e.currentTarget);
+                const p = new URLSearchParams(fd);
+                p.set("page", "1");
+                load(p.toString());
               }}
             >
               <label className="search">
@@ -1796,8 +1959,26 @@ export default function Dashboard() {
                   name="q"
                   type="search"
                   maxLength={150}
-                  placeholder="Nama, NIP, unit kerja, email, WhatsApp"
+                  placeholder={
+                    filterProfession === "Mahasiswa"
+                      ? "Cari nama, NIM, unit kerja, email, WhatsApp…"
+                      : "Cari nama, NIP, unit kerja, email, WhatsApp…"
+                  }
                 />
+              </label>
+              <label>
+                Kategori Profesi
+                <select
+                  name="profession"
+                  value={filterProfession}
+                  onChange={(e) => switchProfession(e.target.value)}
+                >
+                  <option value="">Semua Peserta</option>
+                  <option value="Dosen">Dosen</option>
+                  <option value="Tendik">Tenaga Kependidikan</option>
+                  <option value="Pimpinan">Pimpinan</option>
+                  <option value="Mahasiswa">Mahasiswa</option>
+                </select>
               </label>
               <label>
                 Filter Jadwal
@@ -1852,122 +2033,152 @@ export default function Dashboard() {
               </a>
             </form>
             <div className="table-meta">
-              {d.total} peserta ditemukan · Halaman {d.page} dari{" "}
+              {d.total} peserta {filterProfession ? `(${filterProfession})` : ""}{" "}
+              ditemukan · Halaman {d.page} dari{" "}
               {Math.max(1, Math.ceil(d.total / 25))}
             </div>
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    {[
-                      "No.",
-                      "Nama / NIP",
-                      "Unit Kerja",
-                      "Profesi / Status",
-                      "WhatsApp / Email",
-                      "Jadwal & Sesi",
-                      "Surat Usulan",
-                      "Terdaftar (WITA)",
-                      "Aksi",
-                    ].map((t) => (
-                      <th key={t}>{t}</th>
-                    ))}
+                    <th>No.</th>
+                    <th>
+                      {filterProfession === "Mahasiswa"
+                        ? "Nama / NIM"
+                        : filterProfession
+                        ? "Nama / NIP"
+                        : "Nama / Identitas (NIP/NIM)"}
+                    </th>
+                    <th>Unit Kerja</th>
+                    <th>
+                      {filterProfession === "Mahasiswa"
+                        ? "Status Mahasiswa"
+                        : "Profesi / Status"}
+                    </th>
+                    <th>WhatsApp / Email</th>
+                    <th>Jadwal & Sesi</th>
+                    <th>
+                      {filterProfession === "Mahasiswa"
+                        ? "KTM / Bukti Aktif"
+                        : "Surat Usulan"}
+                    </th>
+                    <th>Terdaftar (WITA)</th>
+                    <th>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {d.participants.map((p, i) => (
-                    <tr key={p.id}>
-                      <td>{(d.page - 1) * 25 + i + 1}</td>
-                      <td>
-                        <b>{p.name}</b>
-                        <small>{p.nip}</small>
-                      </td>
-                      <td>{p.unit}</td>
-                      <td>
-                        <span className="pill" style={{ marginRight: "4px" }}>
-                          {p.profession || "-"}
-                        </span>
-                        <span
-                          className="pill"
-                          style={{ background: "#eef3fb" }}
-                        >
-                          {p.employment_status || "-"}
-                        </span>
-                      </td>
-                      <td>
-                        {p.phone}
-                        <small>{p.email || "Belum memiliki email Unhas"}</small>
-                      </td>
-                      <td>
-                        <b>{p.session}</b>
-                        <small style={{ color: "#64748b", display: "block" }}>
-                          {p.event_date ? formatEventDate(p.event_date) : ""}
-                          {p.location ? ` · ${p.location}` : ""}
-                        </small>
-                      </td>
-                      <td>
-                        {p.letter_file ? (
-                          <a
-                            href={`/api/participants/${p.id}/letter`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                  {d.participants.map((p, i) => {
+                    const isMhs = p.profession === "Mahasiswa";
+                    return (
+                      <tr key={p.id}>
+                        <td>{(d.page - 1) * 25 + i + 1}</td>
+                        <td>
+                          <b>{p.name}</b>
+                          <small
                             style={{
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              color: "#466fd5",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "4px",
+                              color: isMhs ? "#6d28d9" : "#475569",
+                              fontWeight: isMhs ? 600 : 500,
                             }}
                           >
-                            Buka ↗
-                          </a>
-                        ) : (
-                          <span style={{ color: "#a0aec0" }}>-</span>
-                        )}
-                      </td>
-                      <td>{date(p.created_at)}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <button
-                          onClick={() => show(p.id)}
-                          style={{
-                            padding: "5px 9px",
-                            fontSize: "11px",
-                            marginRight: "4px",
-                          }}
-                        >
-                          Lihat ↗
-                        </button>
-                        <button
-                          onClick={() => startEdit(p)}
-                          className="secondary"
-                          style={{
-                            padding: "5px 9px",
-                            fontSize: "11px",
-                            marginRight: "4px",
-                          }}
-                        >
-                          Edit ✎
-                        </button>
-                        <button
-                          onClick={() => askDeleteParticipant(p.id, p.name)}
-                          style={{
-                            padding: "5px 9px",
-                            fontSize: "11px",
-                            background: "#fff0f0",
-                            color: "#c53030",
-                            border: "1px solid #f0d2d2",
-                          }}
-                        >
-                          Hapus ✕
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            {isMhs ? `NIM: ${p.nip}` : `NIP: ${p.nip}`}
+                          </small>
+                        </td>
+                        <td>{p.unit}</td>
+                        <td>
+                          <span className="pill" style={{ marginRight: "4px" }}>
+                            {p.profession || "-"}
+                          </span>
+                          <span
+                            className="pill"
+                            style={{
+                              background: isMhs ? "#f5f3ff" : "#eef3fb",
+                              color: isMhs ? "#6d28d9" : "#1e40af",
+                            }}
+                          >
+                            {isMhs
+                              ? p.employment_status || "Mahasiswa Aktif"
+                              : p.employment_status || "-"}
+                          </span>
+                        </td>
+                        <td>
+                          {p.phone}
+                          <small>
+                            {p.email || "Belum memiliki email Unhas"}
+                          </small>
+                        </td>
+                        <td>
+                          <b>{p.session}</b>
+                          <small style={{ color: "#64748b", display: "block" }}>
+                            {p.event_date ? formatEventDate(p.event_date) : ""}
+                            {p.location ? ` · ${p.location}` : ""}
+                          </small>
+                        </td>
+                        <td>
+                          {p.letter_file ? (
+                            <a
+                              href={`/api/participants/${p.id}/letter`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: isMhs ? "#7c3aed" : "#466fd5",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              {isMhs ? "Buka KTM ↗" : "Buka Surat ↗"}
+                            </a>
+                          ) : (
+                            <span style={{ color: "#a0aec0" }}>-</span>
+                          )}
+                        </td>
+                        <td>{date(p.created_at)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button
+                            onClick={() => show(p.id)}
+                            style={{
+                              padding: "5px 9px",
+                              fontSize: "11px",
+                              marginRight: "4px",
+                            }}
+                          >
+                            Lihat ↗
+                          </button>
+                          <button
+                            onClick={() => startEdit(p)}
+                            className="secondary"
+                            style={{
+                              padding: "5px 9px",
+                              fontSize: "11px",
+                              marginRight: "4px",
+                            }}
+                          >
+                            Edit ✎
+                          </button>
+                          <button
+                            onClick={() => askDeleteParticipant(p.id, p.name)}
+                            style={{
+                              padding: "5px 9px",
+                              fontSize: "11px",
+                              background: "#fff0f0",
+                              color: "#c53030",
+                              border: "1px solid #f0d2d2",
+                            }}
+                          >
+                            Hapus ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {!d.participants.length && (
                     <tr>
                       <td colSpan={9} className="empty">
-                        Belum ada peserta yang sesuai.
+                        {filterProfession
+                          ? `Belum ada peserta ${filterProfession} yang sesuai dengan filter.`
+                          : "Belum ada peserta yang sesuai."}
                       </td>
                     </tr>
                   )}

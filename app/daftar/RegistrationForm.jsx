@@ -131,12 +131,11 @@ export default function RegistrationForm({ role }) {
       nipMax: 18,
       letterLabel: "Surat Penugasan / Usulan Pimpinan Unit Kerja *",
       letterHelp: "Unggah berkas usulan pimpinan unit kerja (format PDF, maks 5 MB).",
-      icon: "🏛️",
       accent: "#1e3a8a",
     },
     Dosen: {
       eyebrow: "01 / JALUR DOSEN",
-      title: "Formulir Pnedaftaran",
+      title: "Formulir Pendaftaran",
       desc: "Khusus Tenaga Pendidik / Dosen Tetap Universitas Hasanuddin.",
       dateLabel: "Jumat, 30 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
@@ -145,12 +144,11 @@ export default function RegistrationForm({ role }) {
       nipMax: 18,
       letterLabel: "Surat Usulan Pimpinan Unit Kerja / Dekan *",
       letterHelp: "Unggah berkas usulan bertanda tangan Dekan / Pimpinan Unit (format PDF, maks 5 MB).",
-      icon: "👨‍🏫",
       accent: "#2563eb",
     },
     Tendik: {
       eyebrow: "01 / JALUR TENAGA KEPENDIDIKAN",
-      title: "Formulir Pnedaftaran",
+      title: "Formulir Pendaftaran",
       desc: "Khusus Tenaga Kependidikan, Staf Administrasi, Laboran, dan Pustakawan Unhas.",
       dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIP (18 Digit Angka) *",
@@ -159,12 +157,11 @@ export default function RegistrationForm({ role }) {
       nipMax: 18,
       letterLabel: "Surat Usulan Pimpinan Unit Kerja *",
       letterHelp: "Unggah berkas usulan bertanda tangan pimpinan unit kerja (format PDF, maks 5 MB).",
-      icon: "💼",
       accent: "#059669",
     },
     Mahasiswa: {
       eyebrow: "01 / JALUR MAHASISWA",
-      title: "Formulir Pnedaftaran",
+      title: "Formulir Pendaftaran",
       desc: "Khusus Mahasiswa Aktif Diploma, Sarjana, dan Pascasarjana Universitas Hasanuddin.",
       dateLabel: "Sabtu, 31 Oktober 2026",
       nipLabel: "NIM (Nomor Induk Mahasiswa) *",
@@ -173,7 +170,6 @@ export default function RegistrationForm({ role }) {
       nipMax: 30,
       letterLabel: "Kartu Tanda Mahasiswa (KTM) / Surat Keterangan Aktif Kuliah *",
       letterHelp: "Unggah scan KTM atau Surat Keterangan Mahasiswa Aktif (format PDF, maks 5 MB).",
-      icon: "🎓",
       accent: "#7c3aed",
     },
   };
@@ -223,12 +219,10 @@ export default function RegistrationForm({ role }) {
                   color: "#334155",
                 }}
               >
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                  <span>📅</span>
+                <div>
                   <b>{formatEventDate(schedule.event_date)}</b>
                 </div>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                  <span>📍</span>
+                <div>
                   <b>{schedule.location}</b>
                 </div>
               </div>

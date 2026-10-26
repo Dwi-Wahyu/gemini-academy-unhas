@@ -261,7 +261,7 @@ async function route(req, ctx) {
           } catch {}
         }
         if (e.code === "ER_DUP_ENTRY")
-          return json({ error: "NIP ini sudah terdaftar." }, 409);
+          return json({ error: d.profession === "Mahasiswa" ? "NIM ini sudah terdaftar." : "NIP ini sudah terdaftar." }, 409);
         throw e;
       } finally {
         conn.release();
@@ -908,7 +908,12 @@ async function route(req, ctx) {
         }
         if (e.code === "ER_DUP_ENTRY")
           return json(
-            { error: "NIP ini sudah terdaftar pada peserta lain." },
+            {
+              error:
+                d.profession === "Mahasiswa"
+                  ? "NIM ini sudah terdaftar pada peserta lain."
+                  : "NIP ini sudah terdaftar pada peserta lain.",
+            },
             409
           );
         throw e;
@@ -920,13 +925,15 @@ async function route(req, ctx) {
       const q = (url.searchParams.get("q") || "").trim();
       const sid = url.searchParams.get("session");
       const scid = url.searchParams.get("schedule");
+      const profession = (url.searchParams.get("profession") || "").trim();
       const page = Number(url.searchParams.get("page") || 1);
       if (
         q.length > 150 ||
         !Number.isSafeInteger(page) ||
         page < 1 ||
         (sid && !/^[1-9]\d*$/.test(sid)) ||
-        (scid && !/^[1-9]\d*$/.test(scid))
+        (scid && !/^[1-9]\d*$/.test(scid)) ||
+        (profession && !["Dosen", "Tendik", "Pimpinan", "Mahasiswa"].includes(profession))
       )
         return json({ error: "Filter tidak valid." }, 422);
       let where = " WHERE 1=1";
@@ -944,6 +951,10 @@ async function route(req, ctx) {
         where += " AND p.academy_session_id=?";
         args.push(sid);
       }
+      if (profession) {
+        where += " AND p.profession=?";
+        args.push(profession);
+      }
       const base =
         " FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id" +
         where;
@@ -954,13 +965,16 @@ async function route(req, ctx) {
             " ORDER BY p.id DESC",
           args,
         );
-        const buffer = await participantWorkbook(r);
+        const buffer = await participantWorkbook(r, profession);
+        const filename = profession
+          ? `peserta-${profession.toLowerCase()}.xlsx`
+          : "peserta-gemini-academy.xlsx";
         return new Response(new Uint8Array(buffer), {
           headers: {
             "Content-Type":
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "Content-Disposition":
-              'attachment; filename="peserta-gemini-academy.xlsx"',
+              `attachment; filename="${filename}"`,
             "Cache-Control": "private, no-store",
           },
         });
@@ -976,10 +990,20 @@ async function route(req, ctx) {
       const [[all]] = await db.query(
         "SELECT COUNT(*) AS total FROM participants",
       );
+      const [profCounts] = await db.query(
+        "SELECT profession, COUNT(*) AS count FROM participants GROUP BY profession"
+      );
+      const profession_counts = { Dosen: 0, Tendik: 0, Pimpinan: 0, Mahasiswa: 0 };
+      for (const row of profCounts) {
+        if (row.profession in profession_counts) {
+          profession_counts[row.profession] = Number(row.count) || 0;
+        }
+      }
       return json({
         participants: r,
         total: count.total,
         all: all.total,
+        profession_counts,
         sessions: await sessions(scid || null),
         schedules: await schedules(),
         page,
