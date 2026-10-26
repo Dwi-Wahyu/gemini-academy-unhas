@@ -213,7 +213,6 @@ export default function RegistrationForm({ role }) {
       <div className="registration-grid">
         {/* BAGIAN KIRI: MENAMPILKAN SEMUA JADWAL DENGAN SESI VALID UNTUK ROLE INI */}
         <section className="intro">
-          <div className="eyebrow">{config.eyebrow}</div>
           <h1 style={{ fontSize: "46px", marginTop: "16px" }}>
             {config.title}
             <br />
@@ -319,7 +318,6 @@ export default function RegistrationForm({ role }) {
 
         {/* BAGIAN KANAN: FORMULIR PENDAFTARAN */}
         <section className="card">
-          <div className="eyebrow">{config.eyebrow}</div>
           <h2>{config.title}</h2>
           <p className="muted">{config.desc}</p>
 
@@ -466,7 +464,7 @@ export default function RegistrationForm({ role }) {
               className="primary"
               disabled={busy || isAllFull || !allValidSessions.length || !selected}
             >
-              {busy ? "Menyimpan pendaftaran…" : `Daftar sebagai ${role} ↗`}
+              {busy ? "Menyimpan pendaftaran…" : `Mendaftar ↗`}
             </button>
             <p className="privacy">
               Data digunakan untuk administrasi kegiatan pelatihan Gemini Academy Unhas.
