@@ -66,9 +66,10 @@ export default function Dashboard() {
     [scheduleDate, setScheduleDate] = useState("2026-10-30"),
     [scheduleLocation, setScheduleLocation] = useState("Arsyad Rasyid Lecture Theather"),
     [scheduleDesc, setScheduleDesc] = useState(""),
+    [scheduleExemptStudentQuota, setScheduleExemptStudentQuota] = useState(false),
     [scheduleSessions, setScheduleSessions] = useState([
-      { name: "Sesi I (Pagi)", starts_at: "08:30", ends_at: "11:30", capacity: 230, allowed_professions: "Dosen,Pimpinan" },
-      { name: "Sesi II (Siang)", starts_at: "13:30", ends_at: "16:30", capacity: 230, allowed_professions: "Dosen,Pimpinan,Tendik" },
+      { name: "Sesi I (Pagi)", starts_at: "08:30", ends_at: "11:30", capacity: 230, allowed_professions: "Dosen,Pimpinan", exempt_student_quota: false },
+      { name: "Sesi II (Siang)", starts_at: "13:30", ends_at: "16:30", capacity: 230, allowed_professions: "Dosen,Pimpinan,Tendik", exempt_student_quota: false },
     ]),
     [scheduleBusy, setScheduleBusy] = useState(false),
     [editScheduleModal, setEditScheduleModal] = useState(null),
@@ -276,6 +277,7 @@ export default function Dashboard() {
           event_date: scheduleDate,
           location: scheduleLocation,
           description: scheduleDesc,
+          exempt_student_quota: scheduleExemptStudentQuota ? 1 : 0,
           sessions: scheduleSessions,
         }),
       });
@@ -298,6 +300,7 @@ export default function Dashboard() {
       event_date: sc.event_date,
       location: sc.location,
       description: sc.description || "",
+      exempt_student_quota: Boolean(sc.exempt_student_quota),
       is_active: sc.is_active,
       sessions: sc.sessions
         ? sc.sessions.map((s) => ({
@@ -308,6 +311,7 @@ export default function Dashboard() {
             capacity: s.capacity,
             reserved: s.reserved,
             allowed_professions: s.allowed_professions || "ALL",
+            exempt_student_quota: Boolean(s.exempt_student_quota),
           }))
         : [],
     });
@@ -1016,6 +1020,20 @@ export default function Dashboard() {
                 </select>
               </label>
 
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f5f3ff", border: "1px solid #ddd6fe", padding: "10px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "12.5px", color: "#5b21b6", marginTop: "10px" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(editScheduleModal.exempt_student_quota)}
+                  onChange={(e) =>
+                    setEditScheduleModal({
+                      ...editScheduleModal,
+                      exempt_student_quota: e.target.checked,
+                    })
+                  }
+                />
+                <span><b>Aturan Khusus Mahasiswa:</b> Bebaskan batasan kuota fakultas untuk seluruh sesi di jadwal ini.</span>
+              </label>
+
               {editScheduleModal.sessions?.length > 0 && (
                 <div style={{ marginTop: "12px", marginBottom: "16px" }}>
                   <span
@@ -1155,6 +1173,23 @@ export default function Dashboard() {
                                 </button>
                               );
                             })}
+                          </div>
+                          <div style={{ marginTop: "4px" }}>
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#6b21a8", cursor: "pointer", margin: 0 }}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(sess.exempt_student_quota)}
+                                onChange={(e) => {
+                                  const updated = [...editScheduleModal.sessions];
+                                  updated[idx].exempt_student_quota = e.target.checked;
+                                  setEditScheduleModal({
+                                    ...editScheduleModal,
+                                    sessions: updated,
+                                  });
+                                }}
+                              />
+                              <span>Bebas kuota fakultas khusus Mahasiswa untuk sesi ini</span>
+                            </label>
                           </div>
                         </div>
                       );
@@ -1363,6 +1398,15 @@ export default function Dashboard() {
                 </label>
               </div>
 
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f5f3ff", border: "1px solid #ddd6fe", padding: "10px 14px", borderRadius: "8px", cursor: "pointer", fontSize: "12.5px", color: "#5b21b6", marginBottom: "15px" }}>
+                <input
+                  type="checkbox"
+                  checked={scheduleExemptStudentQuota}
+                  onChange={(e) => setScheduleExemptStudentQuota(e.target.checked)}
+                />
+                <span><b>Aturan Khusus Mahasiswa:</b> Bebaskan batasan kuota fakultas untuk seluruh sesi di jadwal ini.</span>
+              </label>
+
               <div
                 style={{
                   background: "#f8fafc",
@@ -1398,6 +1442,7 @@ export default function Dashboard() {
                           ends_at: "11:30",
                           capacity: 230,
                           allowed_professions: "ALL",
+                          exempt_student_quota: false,
                         },
                       ]);
                     }}
@@ -1536,6 +1581,20 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
+                        <div style={{ marginTop: "4px" }}>
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#6b21a8", cursor: "pointer", margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(sess.exempt_student_quota)}
+                              onChange={(e) => {
+                                const updated = [...scheduleSessions];
+                                updated[idx].exempt_student_quota = e.target.checked;
+                                setScheduleSessions(updated);
+                              }}
+                            />
+                            <span>Bebas kuota fakultas khusus Mahasiswa untuk sesi ini</span>
+                          </label>
+                        </div>
                       </div>
                     );
                   })}
@@ -1571,6 +1630,22 @@ export default function Dashboard() {
                       <td>{i + 1}</td>
                       <td>
                         <b>{sc.title}</b>
+                        {Boolean(sc.exempt_student_quota) && (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              marginLeft: "6px",
+                              padding: "1px 6px",
+                              borderRadius: "4px",
+                              background: "#f5f3ff",
+                              color: "#6b21a8",
+                              fontSize: "10px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Mhs Bebas Kuota
+                          </span>
+                        )}
                         {sc.description && <small>{sc.description}</small>}
                       </td>
                       <td>
@@ -1609,6 +1684,23 @@ export default function Dashboard() {
                                   }}
                                 >
                                   Akses: {s.allowed_professions}
+                                </span>
+                              )}
+                              {Boolean(s.exempt_student_quota) && (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginLeft: "6px",
+                                    padding: "1px 6px",
+                                    borderRadius: "4px",
+                                    background: "#f5f3ff",
+                                    color: "#6b21a8",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                  }}
+                                  title="Mahasiswa bebas kuota fakultas pada sesi ini"
+                                >
+                                  Bebas Kuota Mhs
                                 </span>
                               )}
                             </span>

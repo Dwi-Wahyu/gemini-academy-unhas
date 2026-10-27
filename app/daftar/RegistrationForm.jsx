@@ -40,7 +40,7 @@ export default function RegistrationForm({ role }) {
   async function refresh() {
     try {
       const [rSessions, rUnits] = await Promise.all([
-        fetch("/api/sessions", { cache: "no-store" }),
+        fetch(`/api/sessions?profession=${encodeURIComponent(role)}`, { cache: "no-store" }),
         fetch("/api/units", { cache: "no-store" }),
       ]);
       const [dSessions, dUnits] = await Promise.all([
@@ -66,18 +66,19 @@ export default function RegistrationForm({ role }) {
               schedule_title: sc.title,
               event_date: sc.event_date,
               location: sc.location,
+              schedule_exempt_student_quota: sc.exempt_student_quota,
             }))
         );
 
       setSelected((v) => {
         const found = validSess.find((s) => String(s.id) === v);
-        if (found && found.remaining > 0) return v;
-        const firstAvailable = validSess.find((s) => s.remaining > 0);
-        return firstAvailable ? String(firstAvailable.id) : "";
+        if (found && Number(found.remaining) > 0) return v;
+        const firstAvailable = validSess.find((s) => Number(s.remaining) > 0);
+        return firstAvailable ? String(firstAvailable.id) : (validSess[0] ? String(validSess[0].id) : "");
       });
 
       setSelectedUnit((v) =>
-        dUnits.some((u) => u.name === v && u.remaining > 0) ? v : "",
+        dUnits.some((u) => u.name === v && (role === "Mahasiswa" || u.remaining > 0)) ? v : "",
       );
     } catch {
       setStatus("Jadwal dan kuota belum dapat diperbarui. Coba beberapa saat lagi.");
@@ -110,6 +111,7 @@ export default function RegistrationForm({ role }) {
       schedule_title: sc.title,
       event_date: sc.event_date,
       location: sc.location,
+      schedule_exempt_student_quota: sc.exempt_student_quota,
     }))
   );
 
@@ -194,7 +196,13 @@ export default function RegistrationForm({ role }) {
   };
 
   const config = roleConfigs[role] || roleConfigs.Dosen;
-  const isAllFull = allValidSessions.length > 0 && allValidSessions.every((s) => s.remaining === 0);
+  const isAllFull = allValidSessions.length > 0 && allValidSessions.every((s) => Number(s.remaining) <= 0);
+  const selectedSession = allValidSessions.find((s) => String(s.id) === String(selected));
+  const isStudentQuotaExempt =
+    role === "Mahasiswa" &&
+    (selectedSession
+      ? Boolean(selectedSession.exempt_student_quota || selectedSession.schedule_exempt_student_quota)
+      : allValidSessions.some((s) => Boolean(s.exempt_student_quota || s.schedule_exempt_student_quota)));
 
   return (
     <div>
@@ -316,7 +324,7 @@ export default function RegistrationForm({ role }) {
           )}
 
           <p className="note">
-            ⓘ Kuota awal 230 peserta per sesi. Sesi penuh atau di luar hak akses kategori otomatis tidak dapat dipilih.
+            ⓘ Kuota awal 230 peserta per sesi. Sesi yang telah penuh otomatis tidak dapat dipilih.
           </p>
           <div className="decor">✦</div>
         </section>
@@ -373,13 +381,25 @@ export default function RegistrationForm({ role }) {
                 onChange={(e) => setSelectedUnit(e.target.value)}
               >
                 <option value="">Pilih unit kerja / fakultas</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.name} disabled={u.remaining <= 0}>
-                    {u.name} — {u.remaining > 0 ? `${u.remaining} kuota tersisa (maks ${u.max_quota})` : `KUOTA PENUH (maks ${u.max_quota})`}
-                  </option>
-                ))}
+                {units.map((u) => {
+                  const isDisabled = !isStudentQuotaExempt && u.remaining <= 0;
+                  return (
+                    <option key={u.id} value={u.name} disabled={isDisabled}>
+                      {u.name}
+                      {isStudentQuotaExempt
+                        ? ""
+                        : u.remaining > 0
+                        ? ` — ${u.remaining} kuota tersisa (maks ${u.max_quota})`
+                        : ` — KUOTA PENUH (maks ${u.max_quota})`}
+                    </option>
+                  );
+                })}
               </select>
-              <small>Setiap unit kerja memiliki batas maksimal kuota pengusulan.</small>
+              <small>
+                {isStudentQuotaExempt
+                  ? "Khusus kategori Mahasiswa pada sesi ini, pendaftaran tidak dibatasi kuota per fakultas."
+                  : "Setiap unit kerja memiliki batas maksimal kuota pengusulan."}
+              </small>
             </label>
 
             {role === "Mahasiswa" ? (
@@ -457,7 +477,7 @@ export default function RegistrationForm({ role }) {
               >
                 <option value="">Pilih sesi yang tersedia</option>
                 {allValidSessions.map((s) => {
-                  const isFull = !s.remaining;
+                  const isFull = Number(s.remaining) <= 0;
                   const eventDateFormatted = formatEventDate(s.event_date);
                   return (
                     <option key={s.id} value={s.id} disabled={isFull}>

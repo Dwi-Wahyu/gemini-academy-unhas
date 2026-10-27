@@ -15,6 +15,13 @@ const json = (data, status = 200) =>
     status,
     headers: { "Cache-Control": "private, no-store" },
   });
+
+function isSessionAllowed(sess, prof) {
+  if (!prof) return true;
+  if (!sess || !sess.allowed_professions || sess.allowed_professions === "ALL") return true;
+  const allowed = sess.allowed_professions.split(",").map((s) => s.trim().toLowerCase());
+  return allowed.includes(prof.toLowerCase());
+}
 async function route(req, ctx) {
   const { path: routeSegments } = await ctx.params;
   const key = routeSegments.join("/");
@@ -27,15 +34,36 @@ async function route(req, ctx) {
       return json({ error: "Origin permintaan tidak valid." }, 403);
     if (req.method === "GET" && key === "sessions") {
       const sid = url.searchParams.get("schedule_id");
+      const profession = url.searchParams.get("profession") || url.searchParams.get("role");
+
       const allScheds = await schedules();
-      const activeScheds = allScheds.filter((s) => s.is_active);
+      let activeScheds = allScheds.filter((s) => s.is_active);
+
+      if (profession) {
+        activeScheds = activeScheds
+          .map((sc) => ({
+            ...sc,
+            sessions: (sc.sessions || []).filter((s) => isSessionAllowed(s, profession)),
+          }))
+          .filter((sc) => sc.sessions.length > 0);
+      }
+
       const targetSchedule = sid
         ? allScheds.find((s) => String(s.id) === sid)
         : ((await getNearestSchedule()) || activeScheds[0] || null);
-      const allSessionsList = await sessions();
-      const sessionList = sid
+
+      let allSessionsList = await sessions();
+      if (profession) {
+        allSessionsList = allSessionsList.filter((s) => isSessionAllowed(s, profession));
+      }
+
+      let sessionList = sid
         ? (targetSchedule ? await sessions(targetSchedule.id) : await sessions(sid))
         : allSessionsList;
+      if (profession && sid) {
+        sessionList = sessionList.filter((s) => isSessionAllowed(s, profession));
+      }
+
       return json({
         schedule: targetSchedule || null,
         schedules: activeScheds,
@@ -174,7 +202,7 @@ async function route(req, ctx) {
         await conn.beginTransaction();
 
         const [targetSessionRows] = await conn.execute(
-          "SELECT id, name, capacity, reserved, allowed_professions FROM academy_sessions WHERE id = ? FOR UPDATE",
+          "SELECT s.id, s.name, s.capacity, s.reserved, s.allowed_professions, s.exempt_student_quota, sc.exempt_student_quota AS schedule_exempt_student_quota FROM academy_sessions s LEFT JOIN schedules sc ON sc.id = s.schedule_id WHERE s.id = ? FOR UPDATE",
           [d.academy_session_id]
         );
         if (!targetSessionRows.length) {
@@ -189,7 +217,7 @@ async function route(req, ctx) {
             await conn.rollback();
             return json(
               {
-                error: `Sesi "${targetSession.name}" hanya dapat dipilih oleh kategori profesi: ${allowed.replace(/,/g, ", ")}.`,
+                error: `Sesi "${targetSession.name}" tidak dapat dipilih oleh kategori profesi ${d.profession}.`,
               },
               422
             );
@@ -204,23 +232,31 @@ async function route(req, ctx) {
           await conn.rollback();
           return json({ error: "Sesi sudah penuh atau tidak tersedia." }, 409);
         }
-        const [unitRows] = await conn.execute(
-          "SELECT id, name, max_quota FROM work_units WHERE name = ? FOR UPDATE",
-          [d.unit]
-        );
-        if (unitRows.length > 0) {
-          const [[countRow]] = await conn.execute(
-            "SELECT COUNT(*) AS used FROM participants WHERE unit = ?",
+
+        const isExemptStudent =
+          d.profession === "Mahasiswa" &&
+          (Boolean(targetSession.exempt_student_quota) ||
+            Boolean(targetSession.schedule_exempt_student_quota));
+
+        if (!isExemptStudent) {
+          const [unitRows] = await conn.execute(
+            "SELECT id, name, max_quota FROM work_units WHERE name = ? FOR UPDATE",
             [d.unit]
           );
-          if (countRow.used >= unitRows[0].max_quota) {
-            await conn.rollback();
-            return json(
-              {
-                error: `Kuota untuk ${d.unit} sudah penuh (maksimal ${unitRows[0].max_quota} peserta).`,
-              },
-              409
+          if (unitRows.length > 0) {
+            const [[countRow]] = await conn.execute(
+              "SELECT COUNT(p.id) AS used FROM participants p JOIN academy_sessions s ON s.id = p.academy_session_id LEFT JOIN schedules sc ON sc.id = s.schedule_id WHERE p.unit = ? AND NOT (p.profession = 'Mahasiswa' AND (COALESCE(s.exempt_student_quota, 0) = 1 OR COALESCE(sc.exempt_student_quota, 0) = 1))",
+              [d.unit]
             );
+            if (countRow.used >= unitRows[0].max_quota) {
+              await conn.rollback();
+              return json(
+                {
+                  error: `Kuota untuk ${d.unit} sudah penuh (maksimal ${unitRows[0].max_quota} peserta).`,
+                },
+                409
+              );
+            }
           }
         }
 
@@ -374,12 +410,13 @@ async function route(req, ctx) {
       if (!location || location.length > 255)
         return json({ error: "Lokasi / tempat wajib diisi (maks 255 karakter)." }, 422);
 
+      const exemptStudentQuota = body.exempt_student_quota ? 1 : 0;
       const conn = await db.getConnection();
       try {
         await conn.beginTransaction();
         const [res] = await conn.execute(
-          "INSERT INTO schedules (title, event_date, location, description, is_active) VALUES (?, ?, ?, ?, 1)",
-          [title, eventDate, location, description || null]
+          "INSERT INTO schedules (title, event_date, location, description, exempt_student_quota, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+          [title, eventDate, location, description || null, exemptStudentQuota]
         );
         const scheduleId = res.insertId;
 
@@ -389,9 +426,10 @@ async function route(req, ctx) {
           const sEnds = typeof s.ends_at === "string" && s.ends_at.trim() ? s.ends_at.trim() : "11:30";
           const sCap = Number(s.capacity) || 230;
           const sAllowed = typeof s.allowed_professions === "string" && s.allowed_professions.trim() ? s.allowed_professions.trim() : "ALL";
+          const sExempt = s.exempt_student_quota ? 1 : 0;
           await conn.execute(
-            "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions) VALUES (?, ?, ?, ?, ?, 0, ?)",
-            [scheduleId, sName, sStarts, sEnds, sCap, sAllowed]
+            "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions, exempt_student_quota) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+            [scheduleId, sName, sStarts, sEnds, sCap, sAllowed, sExempt]
           );
         }
         await conn.commit();
@@ -445,24 +483,26 @@ async function route(req, ctx) {
           return json({ error: "Jadwal tidak ditemukan." }, 404);
         }
 
+        const exemptStudentQuota = body.exempt_student_quota ? 1 : 0;
         await conn.execute(
-          "UPDATE schedules SET title = ?, event_date = ?, location = ?, description = ?, is_active = ? WHERE id = ?",
-          [title, eventDate, location, description || null, isActive, id]
+          "UPDATE schedules SET title = ?, event_date = ?, location = ?, description = ?, exempt_student_quota = ?, is_active = ? WHERE id = ?",
+          [title, eventDate, location, description || null, exemptStudentQuota, isActive, id]
         );
 
         if (Array.isArray(body.sessions)) {
           for (const s of body.sessions) {
             const sAllowed = typeof s.allowed_professions === "string" && s.allowed_professions.trim() ? s.allowed_professions.trim() : "ALL";
+            const sExempt = s.exempt_student_quota ? 1 : 0;
             if (s.id) {
               const sCap = Number(s.capacity) || 230;
               await conn.execute(
-                "UPDATE academy_sessions SET name = ?, starts_at = ?, ends_at = ?, capacity = GREATEST(?, reserved), allowed_professions = ? WHERE id = ? AND schedule_id = ?",
-                [s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), sCap, sAllowed, s.id, id]
+                "UPDATE academy_sessions SET name = ?, starts_at = ?, ends_at = ?, capacity = GREATEST(?, reserved), allowed_professions = ?, exempt_student_quota = ? WHERE id = ? AND schedule_id = ?",
+                [s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), sCap, sAllowed, sExempt, s.id, id]
               );
             } else if (s.name) {
               await conn.execute(
-                "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions) VALUES (?, ?, ?, ?, ?, 0, ?)",
-                [id, s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), Number(s.capacity) || 230, sAllowed]
+                "INSERT INTO academy_sessions (schedule_id, name, starts_at, ends_at, capacity, reserved, allowed_professions, exempt_student_quota) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                [id, s.name.trim(), s.starts_at.trim(), s.ends_at.trim(), Number(s.capacity) || 230, sAllowed, sExempt]
               );
             }
           }
@@ -848,23 +888,35 @@ async function route(req, ctx) {
         }
 
         if (oldP.unit !== d.unit) {
-          const [unitRows] = await conn.execute(
-            "SELECT id, name, max_quota FROM work_units WHERE name = ? FOR UPDATE",
-            [d.unit]
+          const [currSessionRows] = await conn.execute(
+            "SELECT s.exempt_student_quota, sc.exempt_student_quota AS schedule_exempt_student_quota FROM academy_sessions s LEFT JOIN schedules sc ON sc.id = s.schedule_id WHERE s.id = ?",
+            [d.academy_session_id]
           );
-          if (unitRows.length > 0) {
-            const [[countRow]] = await conn.execute(
-              "SELECT COUNT(*) AS used FROM participants WHERE unit = ? AND id != ?",
-              [d.unit, id]
+          const isExemptStudent =
+            d.profession === "Mahasiswa" &&
+            currSessionRows.length > 0 &&
+            (Boolean(currSessionRows[0].exempt_student_quota) ||
+              Boolean(currSessionRows[0].schedule_exempt_student_quota));
+
+          if (!isExemptStudent) {
+            const [unitRows] = await conn.execute(
+              "SELECT id, name, max_quota FROM work_units WHERE name = ? FOR UPDATE",
+              [d.unit]
             );
-            if (countRow.used >= unitRows[0].max_quota) {
-              await conn.rollback();
-              return json(
-                {
-                  error: `Kuota untuk ${d.unit} sudah penuh (maksimal ${unitRows[0].max_quota} peserta).`,
-                },
-                409
+            if (unitRows.length > 0) {
+              const [[countRow]] = await conn.execute(
+                "SELECT COUNT(p.id) AS used FROM participants p JOIN academy_sessions s ON s.id = p.academy_session_id LEFT JOIN schedules sc ON sc.id = s.schedule_id WHERE p.unit = ? AND p.id != ? AND NOT (p.profession = 'Mahasiswa' AND (COALESCE(s.exempt_student_quota, 0) = 1 OR COALESCE(sc.exempt_student_quota, 0) = 1))",
+                [d.unit, id]
               );
+              if (countRow.used >= unitRows[0].max_quota) {
+                await conn.rollback();
+                return json(
+                  {
+                    error: `Kuota untuk ${d.unit} sudah penuh (maksimal ${unitRows[0].max_quota} peserta).`,
+                  },
+                  409
+                );
+              }
             }
           }
         }
