@@ -138,21 +138,33 @@ async function route(req, ctx) {
         letterFile.size > 0
       ) {
         if (letterFile.size > 5 * 1024 * 1024) {
-          errors.push("Ukuran surat usulan pimpinan unit kerja maksimal 5 MB.");
+          errors.push(
+            d.profession === "Mahasiswa"
+              ? "Ukuran berkas KTM / surat keterangan maksimal 5 MB."
+              : "Ukuran surat usulan pimpinan unit kerja maksimal 5 MB."
+          );
         }
         const origName = letterFile.name || "";
         const ext = nodePath.extname(origName).toLowerCase();
         const allowedExts = [".pdf"];
         if (!allowedExts.includes(ext)) {
-          errors.push("Format surat usulan harus berupa file PDF.");
+          errors.push(
+            d.profession === "Mahasiswa"
+              ? "Format berkas KTM / surat keterangan harus berupa file PDF."
+              : "Format surat usulan harus berupa file PDF."
+          );
         } else {
           savedFileName = `${randomUUID()}${ext}`;
           bufferToSave = Buffer.from(await letterFile.arrayBuffer());
         }
       } else if (typeof bodyData.letter_file === "string" && bodyData.letter_file) {
         savedFileName = bodyData.letter_file;
-      } else {
-        errors.push("Surat usulan pimpinan unit kerja wajib diunggah.");
+      } else if (d.profession !== "Pimpinan") {
+        errors.push(
+          d.profession === "Mahasiswa"
+            ? "Kartu Tanda Mahasiswa (KTM) / Surat Keterangan Mahasiswa Aktif wajib diunggah."
+            : "Surat usulan pimpinan unit kerja wajib diunggah."
+        );
       }
 
       if (errors.length) return json({ error: errors.join(" ") }, 422);

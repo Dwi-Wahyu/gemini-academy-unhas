@@ -122,6 +122,13 @@ export default function RegistrationForm({ role }) {
       formData.set("profession", role);
       if (role === "Mahasiswa") {
         formData.set("employment_status", "Mahasiswa");
+        const email = (formData.get("email") || "").toString().trim().toLowerCase();
+        if (!email) {
+          throw Error("Mahasiswa wajib mengisi alamat email Unhas.");
+        }
+        if (!/^[^\s@]+@(?:[a-z0-9-]+\.)*unhas\.ac\.id$/i.test(email)) {
+          throw Error("Mahasiswa wajib menggunakan email resmi Unhas (contoh: @student.unhas.ac.id atau @unhas.ac.id).");
+        }
       }
       const r = await fetch("/api/register", {
         method: "POST",
@@ -146,8 +153,6 @@ export default function RegistrationForm({ role }) {
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
       nipMax: 18,
-      letterLabel: "Surat Penugasan / Usulan Pimpinan Unit Kerja *",
-      letterHelp: "Unggah berkas usulan pimpinan unit kerja (format PDF, maks 5 MB).",
       accent: "#1e3a8a",
     },
     Dosen: {
@@ -395,16 +400,18 @@ export default function RegistrationForm({ role }) {
               </label>
             )}
 
-            <label>
-              {config.letterLabel}
-              <input
-                type="file"
-                name="letter"
-                required
-                accept=".pdf,application/pdf"
-              />
-              <small>{config.letterHelp}</small>
-            </label>
+            {role !== "Pimpinan" && (
+              <label>
+                {config.letterLabel}
+                <input
+                  type="file"
+                  name="letter"
+                  required
+                  accept=".pdf,application/pdf"
+                />
+                <small>{config.letterHelp}</small>
+              </label>
+            )}
 
             <label>
               Nomor WhatsApp Aktif *
@@ -419,16 +426,24 @@ export default function RegistrationForm({ role }) {
             </label>
 
             <label>
-              Alamat Email {role === "Mahasiswa" ? "Unhas / Pribadi" : "Unhas"}{" "}
-              <span className="optional">Opsional</span>
+              Alamat Email Unhas {role === "Mahasiswa" ? "*" : <span className="optional">Opsional</span>}
               <input
                 name="email"
                 type="email"
+                required={role === "Mahasiswa"}
                 maxLength={200}
                 autoComplete="email"
-                placeholder="nama@unhas.ac.id"
+                placeholder={
+                  role === "Mahasiswa"
+                    ? "nama@student.unhas.ac.id atau nama@unhas.ac.id"
+                    : "nama@unhas.ac.id"
+                }
               />
-              <small>Boleh dikosongkan bila belum memiliki email Unhas.</small>
+              <small>
+                {role === "Mahasiswa"
+                  ? "Wajib menggunakan email resmi Unhas (contoh: @student.unhas.ac.id atau @unhas.ac.id)."
+                  : "Boleh dikosongkan bila belum memiliki email Unhas."}
+              </small>
             </label>
 
             {/* PILIHAN SESI: MENAMPILKAN SEMUA JADWAL & SESI YANG VALID UNTUK ROLE INI */}
