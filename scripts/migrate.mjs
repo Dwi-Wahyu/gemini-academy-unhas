@@ -68,6 +68,16 @@ async function migrate() {
       await db.query(`ALTER TABLE participants MODIFY COLUMN nip VARCHAR(30) NOT NULL`);
     }
 
+    // 5b. Cek kolom position pada tabel participants
+    const [colsPosition] = await db.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'participants' AND COLUMN_NAME = 'position'
+    `);
+    if (colsPosition.length === 0) {
+      console.log('-> Menambahkan kolom position ke tabel participants...');
+      await db.query(`ALTER TABLE participants ADD COLUMN position VARCHAR(150) NULL AFTER nip`);
+    }
+
     // 6. Pastikan sesi lama terhubung ke jadwal default
     await db.query('UPDATE academy_sessions SET schedule_id = 1 WHERE schedule_id IS NULL');
 

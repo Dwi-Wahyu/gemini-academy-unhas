@@ -41,3 +41,27 @@ test('Excel mahasiswa menyesuaikan header NIM dan berkas KTM', async () => {
   assert.equal(sheet.getCell('L1').value, 'Status Mahasiswa');
   assert.equal(sheet.getCell('M1').value, 'KTM / Surat Keterangan');
 });
+test('Excel pimpinan mencakup kolom Jabatan', async () => {
+  const pimpinanRecord = {
+    name: 'Prof. Budi',
+    nip: '197501012000031001',
+    position: 'Dekan Fakultas Kedokteran',
+    phone: '081234567890',
+    unit: 'Fakultas Kedokteran',
+    email: 'budi@unhas.ac.id',
+    profession: 'Pimpinan',
+    employment_status: 'PNS',
+    letter_file: null,
+    session: 'Sesi I (Pagi)',
+    starts_at: '08:30',
+    ends_at: '11:30',
+    created_at: '2026-10-23 20:30:00',
+    registration_code: 'test-pimpinan-code',
+  };
+  const buffer = await participantWorkbook([pimpinanRecord], 'Pimpinan');
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(buffer);
+  const sheet = book.getWorksheet('Peserta Pimpinan');
+  assert.equal(sheet.getCell('N1').value, 'Jabatan');
+  assert.equal(sheet.getCell('N2').value, 'Dekan Fakultas Kedokteran');
+});

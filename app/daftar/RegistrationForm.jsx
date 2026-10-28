@@ -122,6 +122,12 @@ export default function RegistrationForm({ role }) {
     try {
       const formData = new FormData(e.currentTarget);
       formData.set("profession", role);
+      if (role === "Pimpinan") {
+        const position = (formData.get("position") || "").toString().trim();
+        if (!position) {
+          throw Error("Jabatan pimpinan wajib diisi.");
+        }
+      }
       if (role === "Mahasiswa") {
         formData.set("employment_status", "Mahasiswa");
         const email = (formData.get("email") || "").toString().trim().toLowerCase();
@@ -155,6 +161,8 @@ export default function RegistrationForm({ role }) {
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
       nipMax: 18,
+      positionLabel: "Jabatan *",
+      positionPlaceholder: "Contoh: Dekan / Wakil Dekan / Ketua Lembaga",
       accent: "#1e3a8a",
     },
     Dosen: {
@@ -177,8 +185,8 @@ export default function RegistrationForm({ role }) {
       nipPlaceholder: "Masukkan 18 digit NIP",
       nipPattern: "[0-9]{18}",
       nipMax: 18,
-      letterLabel: "Surat Usulan Pimpinan Unit Kerja *",
-      letterHelp: "Unggah berkas usulan bertanda tangan pimpinan unit kerja (format PDF, maks 5 MB).",
+      letterLabel: "Surat Usulan Pimpinan Unit Kerja (Opsional)",
+      letterHelp: "Unggah berkas usulan bertanda tangan pimpinan unit kerja jika ada (format PDF, maks 5 MB).",
       accent: "#059669",
     },
     Mahasiswa: {
@@ -372,6 +380,19 @@ export default function RegistrationForm({ role }) {
               </small>
             </label>
 
+            {role === "Pimpinan" && (
+              <label>
+                {config.positionLabel || "Jabatan *"}
+                <input
+                  name="position"
+                  required
+                  maxLength={150}
+                  placeholder={config.positionPlaceholder || "Contoh: Dekan / Wakil Dekan / Ketua Lembaga"}
+                />
+                <small>Masukkan jabatan pimpinan unit kerja saat ini.</small>
+              </label>
+            )}
+
             <label>
               {role === "Mahasiswa" ? "Fakultas / Program Pascasarjana *" : "Unit Kerja / Fakultas *"}
               <select
@@ -426,7 +447,7 @@ export default function RegistrationForm({ role }) {
                 <input
                   type="file"
                   name="letter"
-                  required
+                  required={role !== "Tendik"}
                   accept=".pdf,application/pdf"
                 />
                 <small>{config.letterHelp}</small>

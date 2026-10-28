@@ -24,6 +24,7 @@ export default function Success() {
             {r.profession && r.employment_status ? (
               <>
                 {" "}sebagai <b>{r.profession} ({r.employment_status})</b>
+                {r.position ? <> — <b>{r.position}</b></> : null}
               </>
             ) : null}
             .

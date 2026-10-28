@@ -33,9 +33,20 @@ test('dukungan kategori Pimpinan dan Mahasiswa', () => {
     ...good,
     profession: 'pimpinan',
     employment_status: 'pns',
+    position: 'Dekan Fakultas Teknik',
   });
   assert.deepEqual(rPimpinan.errors, []);
   assert.equal(rPimpinan.data.profession, 'Pimpinan');
+  assert.equal(rPimpinan.data.position, 'Dekan Fakultas Teknik');
+
+  const rPimpinanNoPos = validate({
+    ...good,
+    profession: 'pimpinan',
+    employment_status: 'pns',
+    position: '',
+  });
+  assert.ok(rPimpinanNoPos.errors.length > 0);
+  assert.match(rPimpinanNoPos.errors[0], /Jabatan pimpinan wajib diisi/);
 
   const rMhs = validate({
     ...good,
@@ -99,6 +110,7 @@ test('aturan khusus email Unhas mahasiswa', () => {
   const rPimpinanNoEmail = validate({
     ...good,
     profession: 'Pimpinan',
+    position: 'Dekan',
     email: '',
   });
   assert.deepEqual(rPimpinanNoEmail.errors, []);

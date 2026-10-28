@@ -405,6 +405,7 @@ export default function Dashboard() {
       id: p.id,
       name: p.name,
       nip: p.nip,
+      position: p.position || "",
       unit: p.unit,
       profession: p.profession || "Dosen",
       employment_status:
@@ -562,6 +563,7 @@ export default function Dashboard() {
                 [detail.profession === "Mahasiswa"
                   ? "NIM (Nomor Induk Mahasiswa)"
                   : "NIP (Nomor Induk Pegawai)"]: detail.nip,
+                ...(detail.position ? { "Jabatan": detail.position } : {}),
                 "Unit Kerja": detail.unit,
                 "Kategori Profesi": detail.profession || "-",
                 [detail.profession === "Mahasiswa"
@@ -731,6 +733,24 @@ export default function Dashboard() {
                     : "Wajib tepat 18 digit angka tanpa spasi."}
                 </small>
               </label>
+              {editModal.profession === "Pimpinan" && (
+                <label>
+                  Jabatan *
+                  <input
+                    name="position"
+                    required
+                    maxLength={150}
+                    placeholder="Contoh: Dekan / Wakil Dekan / Ketua Lembaga"
+                    value={editModal.position || ""}
+                    onChange={(e) =>
+                      setEditModal({ ...editModal, position: e.target.value })
+                    }
+                  />
+                  <small style={{ color: "#64748b" }}>
+                    Jabatan pimpinan unit kerja (maksimal 150 karakter).
+                  </small>
+                </label>
+              )}
               <div
                 style={{
                   display: "grid",
@@ -2174,6 +2194,17 @@ export default function Dashboard() {
                           >
                             {isMhs ? `NIM: ${p.nip}` : `NIP: ${p.nip}`}
                           </small>
+                          {p.position ? (
+                            <small
+                              style={{
+                                color: "#1e3a8a",
+                                fontWeight: 600,
+                                display: "block",
+                              }}
+                            >
+                              Jabatan: {p.position}
+                            </small>
+                          ) : null}
                         </td>
                         <td>{p.unit}</td>
                         <td>

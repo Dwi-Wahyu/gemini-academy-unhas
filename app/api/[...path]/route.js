@@ -79,7 +79,7 @@ async function route(req, ctx) {
       const code = (await cookies()).get("academy_receipt")?.value;
       if (!code) return json({ error: "Bukti tidak ditemukan." }, 404);
       const [rows] = await db.execute(
-        "SELECT p.id,p.name,p.registration_code,p.profession,p.employment_status,p.letter_file,s.name AS session,s.starts_at,s.ends_at,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id WHERE p.registration_code=?",
+        "SELECT p.id,p.name,p.nip,p.position,p.registration_code,p.profession,p.employment_status,p.letter_file,s.name AS session,s.starts_at,s.ends_at,sc.title AS schedule_title,DATE_FORMAT(sc.event_date, '%Y-%m-%d') AS event_date,sc.location FROM participants p JOIN academy_sessions s ON s.id=p.academy_session_id LEFT JOIN schedules sc ON sc.id=s.schedule_id WHERE p.registration_code=?",
         [code],
       );
       return rows[0]
@@ -187,7 +187,7 @@ async function route(req, ctx) {
         }
       } else if (typeof bodyData.letter_file === "string" && bodyData.letter_file) {
         savedFileName = bodyData.letter_file;
-      } else if (d.profession !== "Pimpinan") {
+      } else if (d.profession !== "Pimpinan" && d.profession !== "Tendik") {
         errors.push(
           d.profession === "Mahasiswa"
             ? "Kartu Tanda Mahasiswa (KTM) / Surat Keterangan Mahasiswa Aktif wajib diunggah."
@@ -268,11 +268,12 @@ async function route(req, ctx) {
 
         const code = randomUUID();
         await conn.execute(
-          "INSERT INTO participants(registration_code,name,nip,unit,phone,email,profession,employment_status,letter_file,academy_session_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO participants(registration_code,name,nip,position,unit,phone,email,profession,employment_status,letter_file,academy_session_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
           [
             code,
             d.name,
             d.nip,
+            d.position || null,
             d.unit,
             d.phone,
             d.email || null,
@@ -930,10 +931,11 @@ async function route(req, ctx) {
         }
 
         await conn.execute(
-          "UPDATE participants SET name = ?, nip = ?, unit = ?, phone = ?, email = ?, profession = ?, employment_status = ?, letter_file = ?, academy_session_id = ? WHERE id = ?",
+          "UPDATE participants SET name = ?, nip = ?, position = ?, unit = ?, phone = ?, email = ?, profession = ?, employment_status = ?, letter_file = ?, academy_session_id = ? WHERE id = ?",
           [
             d.name,
             d.nip,
+            d.position || null,
             d.unit,
             d.phone,
             d.email || null,
