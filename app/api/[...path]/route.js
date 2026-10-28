@@ -224,6 +224,11 @@ async function route(req, ctx) {
           }
         }
 
+        if (Number(targetSession.reserved) >= Number(targetSession.capacity)) {
+          await conn.rollback();
+          return json({ error: "Sesi sudah penuh atau tidak tersedia." }, 409);
+        }
+
         const [taken] = await conn.execute(
           "UPDATE academy_sessions SET reserved=reserved+1 WHERE id=? AND reserved<capacity",
           [d.academy_session_id],
@@ -518,38 +523,250 @@ async function route(req, ctx) {
         conn.release();
       }
     }
+    async function moveParticipantsBetweenSchedules(conn, fromScheduleId, toScheduleId) {
+      const [fromSc] = await conn.execute("SELECT id, title FROM schedules WHERE id = ?", [fromScheduleId]);
+      const [toSc] = await conn.execute("SELECT id, title FROM schedules WHERE id = ?", [toScheduleId]);
+      if (!fromSc.length || !toSc.length) {
+        throw Error("Jadwal asal atau jadwal tujuan tidak ditemukan.");
+      }
+
+      const [participants] = await conn.execute(
+        "SELECT p.id, p.name, p.profession, p.academy_session_id, s.name AS session_name FROM participants p JOIN academy_sessions s ON s.id = p.academy_session_id WHERE s.schedule_id = ? ORDER BY p.id ASC FOR UPDATE",
+        [fromScheduleId]
+      );
+
+      if (!participants.length) {
+        return { movedCount: 0, fromTitle: fromSc[0].title, toTitle: toSc[0].title };
+      }
+
+      const [targetSessions] = await conn.execute(
+        "SELECT id, name, capacity, reserved, GREATEST(capacity - reserved, 0) AS remaining, allowed_professions FROM academy_sessions WHERE schedule_id = ? FOR UPDATE",
+        [toScheduleId]
+      );
+
+      if (!targetSessions.length) {
+        throw Error(`Jadwal tujuan "${toSc[0].title}" tidak memiliki sesi kegiatan.`);
+      }
+
+      const totalRemaining = targetSessions.reduce(
+        (sum, s) => sum + Number(s.remaining || 0),
+        0
+      );
+
+      if (participants.length > totalRemaining) {
+        throw Error(
+          `Kuota pada jadwal tujuan tidak mencukupi. Diperlukan ${participants.length} kursi, namun jadwal "${toSc[0].title}" hanya memiliki ${totalRemaining} kursi tersisa.`
+        );
+      }
+
+      function isSessionAllowedForProf(sess, prof) {
+        if (!sess.allowed_professions || sess.allowed_professions === "ALL") return true;
+        const list = sess.allowed_professions.split(",").map((x) => x.trim().toLowerCase());
+        return list.includes(prof.toLowerCase());
+      }
+
+      const assignments = [];
+      for (const p of participants) {
+        let chosen = targetSessions.find(
+          (s) =>
+            s.name.toLowerCase() === p.session_name.toLowerCase() &&
+            isSessionAllowedForProf(s, p.profession) &&
+            Number(s.remaining) > 0
+        );
+        if (!chosen) {
+          chosen = targetSessions.find(
+            (s) => isSessionAllowedForProf(s, p.profession) && Number(s.remaining) > 0
+          );
+        }
+        if (!chosen) {
+          chosen = targetSessions.find((s) => Number(s.remaining) > 0);
+        }
+
+        if (!chosen) {
+          throw Error(
+            `Kuota atau batasan sesi tidak mencukupi untuk memindahkan peserta "${p.name}".`
+          );
+        }
+
+        chosen.remaining = Number(chosen.remaining) - 1;
+        chosen.reserved = Number(chosen.reserved) + 1;
+        assignments.push({ participantId: p.id, newSessionId: chosen.id });
+      }
+
+      for (const a of assignments) {
+        await conn.execute(
+          "UPDATE participants SET academy_session_id = ? WHERE id = ?",
+          [a.newSessionId, a.participantId]
+        );
+      }
+
+      for (const s of targetSessions) {
+        await conn.execute(
+          "UPDATE academy_sessions SET reserved = ? WHERE id = ?",
+          [s.reserved, s.id]
+        );
+      }
+
+      await conn.execute(
+        "UPDATE academy_sessions SET reserved = 0 WHERE schedule_id = ?",
+        [fromScheduleId]
+      );
+
+      return {
+        movedCount: participants.length,
+        fromTitle: fromSc[0].title,
+        toTitle: toSc[0].title,
+      };
+    }
+
+    if (req.method === "POST" && key === "schedules/move-participants") {
+      const b = await req.json();
+      const fromScheduleId = Number(b.from_schedule_id);
+      const toScheduleId = Number(b.to_schedule_id);
+      const pin = typeof b.pin === "string" ? b.pin.trim() : "";
+
+      if (
+        !Number.isSafeInteger(fromScheduleId) ||
+        fromScheduleId < 1 ||
+        !Number.isSafeInteger(toScheduleId) ||
+        toScheduleId < 1
+      ) {
+        return json({ error: "ID jadwal tidak valid." }, 422);
+      }
+      if (fromScheduleId === toScheduleId) {
+        return json({ error: "Jadwal tujuan tidak boleh sama dengan jadwal asal." }, 422);
+      }
+
+      const expectedPin = (process.env.ADMIN_PIN || "1234").trim();
+      if (!pin || pin !== expectedPin) {
+        return json(
+          { error: "PIN Admin tidak valid. Masukkan PIN Admin yang sesuai." },
+          403
+        );
+      }
+
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+        const res = await moveParticipantsBetweenSchedules(
+          conn,
+          fromScheduleId,
+          toScheduleId
+        );
+        if (res.movedCount === 0) {
+          await conn.rollback();
+          return json(
+            { error: "Tidak ada peserta yang terdaftar pada jadwal asal." },
+            422
+          );
+        }
+        await conn.commit();
+        return json({
+          ok: true,
+          message: `Berhasil memindahkan ${res.movedCount} peserta dari "${res.fromTitle}" ke "${res.toTitle}".`,
+          schedules: await schedules(),
+        });
+      } catch (e) {
+        await conn.rollback();
+        return json({ error: e.message }, 422);
+      } finally {
+        conn.release();
+      }
+    }
+
     if (
       (req.method === "DELETE" && key.startsWith("schedules/")) ||
       (req.method === "POST" && key === "schedules/delete")
     ) {
-      let id;
+      let id, pin, moveToScheduleId;
       if (key === "schedules/delete" || req.method === "POST") {
         const b = await req.json();
         id = Number(b.id);
+        pin = typeof b.pin === "string" ? b.pin.trim() : "";
+        moveToScheduleId = b.move_to_schedule_id ? Number(b.move_to_schedule_id) : null;
       } else {
         id = Number(routeSegments[1]);
       }
       if (!Number.isSafeInteger(id) || id < 1)
         return json({ error: "ID jadwal tidak valid." }, 422);
 
-      const [sc] = await db.execute("SELECT title FROM schedules WHERE id = ?", [id]);
+      const [sc] = await db.execute("SELECT id, title FROM schedules WHERE id = ?", [id]);
       if (!sc.length) return json({ error: "Jadwal tidak ditemukan." }, 404);
 
       const [[pCount]] = await db.execute(
         "SELECT COUNT(*) AS count FROM participants p JOIN academy_sessions s ON s.id = p.academy_session_id WHERE s.schedule_id = ?",
         [id]
       );
-      if (pCount.count > 0) {
-        return json(
-          {
-            error: `Tidak dapat menghapus jadwal "${sc[0].title}" karena terdapat ${pCount.count} peserta yang sudah terdaftar.`,
-          },
-          409
-        );
+
+      const hasParticipants = pCount.count > 0;
+      if (hasParticipants) {
+        const expectedPin = (process.env.ADMIN_PIN || "1234").trim();
+        if (!pin || pin !== expectedPin) {
+          return json(
+            {
+              error: "PIN Admin tidak valid. Masukkan PIN Admin yang sesuai untuk menghapus jadwal yang memiliki peserta.",
+            },
+            403
+          );
+        }
       }
 
-      await db.execute("DELETE FROM schedules WHERE id = ?", [id]);
-      return json({ ok: true, message: `Jadwal "${sc[0].title}" berhasil dihapus.`, schedules: await schedules() });
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        let moveInfo = null;
+        if (hasParticipants) {
+          if (moveToScheduleId) {
+            if (moveToScheduleId === id) {
+              await conn.rollback();
+              return json(
+                { error: "Jadwal tujuan pemindahan tidak boleh sama dengan jadwal yang akan dihapus." },
+                422
+              );
+            }
+            moveInfo = await moveParticipantsBetweenSchedules(
+              conn,
+              id,
+              moveToScheduleId
+            );
+          } else {
+            const [fromSessions] = await conn.execute(
+              "SELECT id FROM academy_sessions WHERE schedule_id = ?",
+              [id]
+            );
+            if (fromSessions.length > 0) {
+              const sessIds = fromSessions.map((s) => s.id);
+              const placeholders = sessIds.map(() => "?").join(",");
+              await conn.execute(
+                `DELETE FROM participants WHERE academy_session_id IN (${placeholders})`,
+                sessIds
+              );
+            }
+          }
+        }
+
+        await conn.execute("DELETE FROM schedules WHERE id = ?", [id]);
+        await conn.commit();
+
+        let successMsg = `Jadwal "${sc[0].title}" berhasil dihapus.`;
+        if (hasParticipants && moveInfo) {
+          successMsg = `Jadwal "${sc[0].title}" berhasil dihapus dan ${moveInfo.movedCount} peserta telah dipindahkan ke jadwal "${moveInfo.toTitle}".`;
+        } else if (hasParticipants) {
+          successMsg = `Jadwal "${sc[0].title}" beserta ${pCount.count} peserta berhasil dihapus.`;
+        }
+
+        return json({
+          ok: true,
+          message: successMsg,
+          schedules: await schedules(),
+        });
+      } catch (e) {
+        await conn.rollback();
+        return json({ error: e.message }, 422);
+      } finally {
+        conn.release();
+      }
     }
     if (req.method === "POST" && key === "units") {
       const body = await req.json();
@@ -1008,8 +1225,8 @@ async function route(req, ctx) {
       const args = [];
       if (q) {
         where +=
-          " AND (p.name LIKE ? OR p.nip LIKE ? OR p.unit LIKE ? OR p.email LIKE ? OR p.phone LIKE ? OR p.profession LIKE ? OR p.employment_status LIKE ?)";
-        args.push(...Array(7).fill("%" + q + "%"));
+          " AND (p.name LIKE ? OR p.nip LIKE ? OR p.position LIKE ? OR p.unit LIKE ? OR p.email LIKE ? OR p.phone LIKE ? OR p.profession LIKE ? OR p.employment_status LIKE ?)";
+        args.push(...Array(8).fill("%" + q + "%"));
       }
       if (scid) {
         where += " AND s.schedule_id=?";

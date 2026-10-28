@@ -74,7 +74,7 @@ export default function RegistrationForm({ role }) {
         const found = validSess.find((s) => String(s.id) === v);
         if (found && Number(found.remaining) > 0) return v;
         const firstAvailable = validSess.find((s) => Number(s.remaining) > 0);
-        return firstAvailable ? String(firstAvailable.id) : (validSess[0] ? String(validSess[0].id) : "");
+        return firstAvailable ? String(firstAvailable.id) : "";
       });
 
       setSelectedUnit((v) =>
@@ -121,6 +121,11 @@ export default function RegistrationForm({ role }) {
     setError("");
     try {
       const formData = new FormData(e.currentTarget);
+      const chosenSessionId = formData.get("academy_session_id");
+      const chosenSession = allValidSessions.find((s) => String(s.id) === String(chosenSessionId));
+      if (!chosenSession || Number(chosenSession.remaining) <= 0) {
+        throw Error("Sesi pelatihan yang dipilih sudah penuh. Silakan pilih sesi lainnya.");
+      }
       formData.set("profession", role);
       if (role === "Pimpinan") {
         const position = (formData.get("position") || "").toString().trim();
@@ -518,7 +523,13 @@ export default function RegistrationForm({ role }) {
 
             <button
               className="primary"
-              disabled={busy || isAllFull || !allValidSessions.length || !selected}
+              disabled={
+                busy ||
+                isAllFull ||
+                !allValidSessions.length ||
+                !selected ||
+                Number(allValidSessions.find((s) => String(s.id) === String(selected))?.remaining || 0) <= 0
+              }
             >
               {busy ? "Menyimpan pendaftaran…" : `Mendaftar ↗`}
             </button>

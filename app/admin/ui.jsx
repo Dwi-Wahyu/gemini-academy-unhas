@@ -73,13 +73,19 @@ export default function Dashboard() {
     ]),
     [scheduleBusy, setScheduleBusy] = useState(false),
     [editScheduleModal, setEditScheduleModal] = useState(null),
-    [editScheduleBusy, setEditScheduleBusy] = useState(false);
+    [editScheduleBusy, setEditScheduleBusy] = useState(false),
+    [deleteScheduleModal, setDeleteScheduleModal] = useState(null),
+    [deleteScheduleBusy, setDeleteScheduleBusy] = useState(false),
+    [moveParticipantsModal, setMoveParticipantsModal] = useState(null),
+    [moveParticipantsBusy, setMoveParticipantsBusy] = useState(false);
 
   // Tangani tombol ESC untuk menutup dialog yang sedang terbuka
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.key === "Escape") {
         if (confirmModal && !confirmBusy) setConfirmModal(null);
+        else if (deleteScheduleModal && !deleteScheduleBusy) setDeleteScheduleModal(null);
+        else if (moveParticipantsModal && !moveParticipantsBusy) setMoveParticipantsModal(null);
         else if (editScheduleModal && !editScheduleBusy) setEditScheduleModal(null);
         else if (editUnitModal && !editUnitBusy) setEditUnitModal(null);
         else if (editModal && !editBusy) setEditModal(null);
@@ -369,10 +375,25 @@ export default function Dashboard() {
     }
   }
 
-  function askDeleteSchedule(id, title) {
+  function askDeleteSchedule(sc) {
+    const hasParticipants = Number(sc.total_reserved) > 0;
+    if (hasParticipants) {
+      const others = schedules.filter((s) => s.id !== sc.id);
+      setDeleteScheduleModal({
+        id: sc.id,
+        title: sc.title,
+        reserved: Number(sc.total_reserved),
+        pin: "",
+        actionType: others.length > 0 ? "move" : "delete_all",
+        targetScheduleId: others.length > 0 ? String(others[0].id) : "",
+        error: "",
+      });
+      return;
+    }
+
     setConfirmModal({
       title: "Hapus Jadwal Kegiatan?",
-      message: `Apakah Anda yakin ingin menghapus jadwal "${title}"? Seluruh sesi terkait akan ikut dihapus.`,
+      message: `Apakah Anda yakin ingin menghapus jadwal "${sc.title}"? Seluruh sesi terkait akan ikut dihapus.`,
       confirmText: "Ya, Hapus Jadwal",
       danger: true,
       action: async () => {
@@ -383,12 +404,12 @@ export default function Dashboard() {
           const r = await fetch("/api/schedules/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id }),
+            body: JSON.stringify({ id: sc.id }),
           });
           const j = await r.json();
           if (!r.ok) throw Error(j.error);
           setSchedules(j.schedules);
-          setUnitMsg(`Jadwal "${title}" berhasil dihapus.`);
+          setUnitMsg(`Jadwal "${sc.title}" berhasil dihapus.`);
           setConfirmModal(null);
           load(query);
         } catch (e) {
@@ -398,6 +419,83 @@ export default function Dashboard() {
         }
       },
     });
+  }
+
+  async function submitDeleteScheduleWithParticipants(e) {
+    e.preventDefault();
+    if (!deleteScheduleModal) return;
+    setDeleteScheduleBusy(true);
+    setDeleteScheduleModal((m) => ({ ...m, error: "" }));
+    try {
+      const payload = {
+        id: deleteScheduleModal.id,
+        pin: deleteScheduleModal.pin,
+        move_to_schedule_id:
+          deleteScheduleModal.actionType === "move"
+            ? Number(deleteScheduleModal.targetScheduleId)
+            : null,
+      };
+
+      const r = await fetch("/api/schedules/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+
+      setSchedules(j.schedules);
+      setUnitMsg(j.message || `Jadwal "${deleteScheduleModal.title}" berhasil dihapus.`);
+      setDeleteScheduleModal(null);
+      load(query);
+    } catch (err) {
+      setDeleteScheduleModal((m) => ({ ...m, error: err.message }));
+    } finally {
+      setDeleteScheduleBusy(false);
+    }
+  }
+
+  function startMoveParticipants(sc) {
+    const others = schedules.filter((s) => s.id !== sc.id);
+    setMoveParticipantsModal({
+      fromId: sc.id,
+      fromTitle: sc.title,
+      reserved: Number(sc.total_reserved),
+      targetScheduleId: others.length > 0 ? String(others[0].id) : "",
+      pin: "",
+      error: "",
+    });
+  }
+
+  async function submitMoveParticipants(e) {
+    e.preventDefault();
+    if (!moveParticipantsModal) return;
+    setMoveParticipantsBusy(true);
+    setMoveParticipantsModal((m) => ({ ...m, error: "" }));
+    try {
+      const payload = {
+        from_schedule_id: moveParticipantsModal.fromId,
+        to_schedule_id: Number(moveParticipantsModal.targetScheduleId),
+        pin: moveParticipantsModal.pin,
+      };
+
+      const r = await fetch("/api/schedules/move-participants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!r.ok) throw Error(j.error);
+
+      setSchedules(j.schedules);
+      setUnitMsg(j.message);
+      setMoveParticipantsModal(null);
+      load(query);
+    } catch (err) {
+      setMoveParticipantsModal((m) => ({ ...m, error: err.message }));
+    } finally {
+      setMoveParticipantsBusy(false);
+    }
   }
 
   function startEdit(p) {
@@ -1364,6 +1462,494 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* MODAL HAPUS JADWAL DENGAN PENDAFTAR & VERIFIKASI PIN ADMIN */}
+      {deleteScheduleModal && (
+        <div
+          className="dialog-overlay"
+          onClick={() => !deleteScheduleBusy && setDeleteScheduleModal(null)}
+        >
+          <div
+            className="dialog-box"
+            style={{ maxWidth: "560px", width: "100%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+              <div
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "50%",
+                  background: "#fee2e2",
+                  color: "#dc2626",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: "22px",
+                  flexShrink: 0,
+                }}
+              >
+                ⚠️
+              </div>
+              <div>
+                <h2 style={{ fontSize: "19px", margin: 0, color: "#1e293b" }}>
+                  Konfirmasi Hapus Jadwal Kegiatan
+                </h2>
+                <small style={{ color: "#64748b" }}>
+                  Jadwal ini memiliki {deleteScheduleModal.reserved} peserta yang terdaftar
+                </small>
+              </div>
+            </div>
+
+            <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, marginBottom: "16px" }}>
+              Anda akan menghapus jadwal: <strong>"{deleteScheduleModal.title}"</strong>.
+            </p>
+
+            {deleteScheduleModal.error && (
+              <div
+                className="alert"
+                style={{
+                  padding: "10px 14px",
+                  marginBottom: "16px",
+                  fontSize: "12px",
+                  color: "#b91c1c",
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: "8px",
+                }}
+              >
+                {deleteScheduleModal.error}
+              </div>
+            )}
+
+            <form onSubmit={submitDeleteScheduleWithParticipants}>
+              <div style={{ marginBottom: "18px" }}>
+                <label style={{ fontWeight: 600, fontSize: "13px", display: "block", marginBottom: "8px" }}>
+                  Pilihan Penanganan Peserta:
+                </label>
+
+                {schedules.filter((s) => s.id !== deleteScheduleModal.id).length > 0 ? (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "10px",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      border: deleteScheduleModal.actionType === "move" ? "1px solid #2563eb" : "1px solid #e2e8f0",
+                      background: deleteScheduleModal.actionType === "move" ? "#eff6ff" : "#fff",
+                      cursor: "pointer",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="actionType"
+                      value="move"
+                      checked={deleteScheduleModal.actionType === "move"}
+                      onChange={() => setDeleteScheduleModal((m) => ({ ...m, actionType: "move", error: "" }))}
+                      style={{ width: "auto", marginTop: "3px" }}
+                    />
+                    <div>
+                      <strong style={{ display: "block", fontSize: "13px", color: "#1e293b" }}>
+                        Pindahkan pendaftar ke jadwal lain lalu hapus (Direkomendasikan)
+                      </strong>
+                      <small style={{ color: "#64748b" }}>
+                        Pendaftar akan dialihkan ke jadwal lain selama kuota masih mencukupi.
+                      </small>
+                    </div>
+                  </label>
+                ) : (
+                  <div style={{ padding: "10px", background: "#f8fafc", borderRadius: "8px", color: "#64748b", fontSize: "12px", marginBottom: "10px" }}>
+                    Tidak ada jadwal lain untuk memindahkan peserta.
+                  </div>
+                )}
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    border: deleteScheduleModal.actionType === "delete_all" ? "1px solid #dc2626" : "1px solid #e2e8f0",
+                    background: deleteScheduleModal.actionType === "delete_all" ? "#fef2f2" : "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="actionType"
+                    value="delete_all"
+                    checked={deleteScheduleModal.actionType === "delete_all"}
+                    onChange={() => setDeleteScheduleModal((m) => ({ ...m, actionType: "delete_all", error: "" }))}
+                    style={{ width: "auto", marginTop: "3px" }}
+                  />
+                  <div>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#dc2626" }}>
+                      Hapus jadwal sekaligus seluruh pendaftarnya
+                    </strong>
+                    <small style={{ color: "#991b1b" }}>
+                      Seluruh {deleteScheduleModal.reserved} data peserta pada jadwal ini akan dihapus permanen.
+                    </small>
+                  </div>
+                </label>
+              </div>
+
+              {deleteScheduleModal.actionType === "move" && (
+                <div
+                  style={{
+                    marginBottom: "18px",
+                    padding: "14px",
+                    background: "#f8fafc",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <label style={{ fontWeight: 600, fontSize: "12px", display: "block", marginBottom: "6px" }}>
+                    Pilih Jadwal Tujuan Pemindahan:
+                  </label>
+                  <select
+                    value={deleteScheduleModal.targetScheduleId}
+                    onChange={(e) =>
+                      setDeleteScheduleModal((m) => ({
+                        ...m,
+                        targetScheduleId: e.target.value,
+                        error: "",
+                      }))
+                    }
+                    style={{ marginBottom: "10px" }}
+                    required
+                  >
+                    {schedules
+                      .filter((s) => s.id !== deleteScheduleModal.id)
+                      .map((sc) => {
+                        const remaining = (sc.sessions || []).reduce(
+                          (sum, s) =>
+                            sum + Number(s.remaining || Math.max(0, s.capacity - s.reserved)),
+                          0
+                        );
+                        return (
+                          <option key={sc.id} value={sc.id}>
+                            {sc.title} (Sisa Kuota: {remaining} kursi)
+                          </option>
+                        );
+                      })}
+                  </select>
+
+                  {(() => {
+                    const target = schedules.find(
+                      (s) => String(s.id) === String(deleteScheduleModal.targetScheduleId)
+                    );
+                    const targetRemaining = target
+                      ? (target.sessions || []).reduce(
+                          (sum, s) =>
+                            sum + Number(s.remaining || Math.max(0, s.capacity - s.reserved)),
+                          0
+                        )
+                      : 0;
+                    const isQuotaSufficient =
+                      targetRemaining >= deleteScheduleModal.reserved;
+                    return isQuotaSufficient ? (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#15803d",
+                          background: "#f0fdf4",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #bbf7d0",
+                        }}
+                      >
+                        ✓ Kuota mencukupi: tersedia {targetRemaining} kursi untuk {deleteScheduleModal.reserved} peserta.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#b91c1c",
+                          background: "#fef2f2",
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #fecaca",
+                        }}
+                      >
+                        ⚠️ Kuota tidak mencukupi: jadwal tujuan hanya memiliki {targetRemaining} kursi tersisa (dibutuhkan {deleteScheduleModal.reserved} kursi).
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div style={{ marginBottom: "22px" }}>
+                <label style={{ fontWeight: 600, fontSize: "12px", display: "block", marginBottom: "6px" }}>
+                  Masukkan PIN Admin (ADMIN_PIN) *
+                </label>
+                <input
+                  type="password"
+                  placeholder="Masukkan nilai ADMIN_PIN dari .env"
+                  value={deleteScheduleModal.pin}
+                  onChange={(e) =>
+                    setDeleteScheduleModal((m) => ({
+                      ...m,
+                      pin: e.target.value,
+                      error: "",
+                    }))
+                  }
+                  required
+                />
+                <small style={{ color: "#64748b", marginTop: "4px", display: "block" }}>
+                  Diperlukan otorisasi PIN Admin untuk menghapus jadwal yang memiliki peserta terdaftar.
+                </small>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setDeleteScheduleModal(null)}
+                  disabled={deleteScheduleBusy}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="button-danger"
+                  disabled={
+                    deleteScheduleBusy ||
+                    !deleteScheduleModal.pin ||
+                    (deleteScheduleModal.actionType === "move" &&
+                      (() => {
+                        const target = schedules.find(
+                          (s) =>
+                            String(s.id) ===
+                            String(deleteScheduleModal.targetScheduleId)
+                        );
+                        const targetRemaining = target
+                          ? (target.sessions || []).reduce(
+                              (sum, s) =>
+                                sum +
+                                Number(
+                                  s.remaining ||
+                                    Math.max(0, s.capacity - s.reserved)
+                                ),
+                              0
+                            )
+                          : 0;
+                        return targetRemaining < deleteScheduleModal.reserved;
+                      })())
+                  }
+                >
+                  {deleteScheduleBusy ? "Memproses…" : "Konfirmasi Hapus"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PINDAHKAN PESERTA ANTAR JADWAL */}
+      {moveParticipantsModal && (
+        <div
+          className="dialog-overlay"
+          onClick={() => !moveParticipantsBusy && setMoveParticipantsModal(null)}
+        >
+          <div
+            className="dialog-box"
+            style={{ maxWidth: "540px", width: "100%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+              <div
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "50%",
+                  background: "#eff6ff",
+                  color: "#2563eb",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: "22px",
+                  flexShrink: 0,
+                }}
+              >
+                ⇄
+              </div>
+              <div>
+                <h2 style={{ fontSize: "19px", margin: 0, color: "#1e293b" }}>
+                  Pindahkan Pendaftar Antar Jadwal
+                </h2>
+                <small style={{ color: "#64748b" }}>
+                  Memindahkan {moveParticipantsModal.reserved} peserta dari jadwal ini
+                </small>
+              </div>
+            </div>
+
+            <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, marginBottom: "16px" }}>
+              Jadwal Asal: <strong>"{moveParticipantsModal.fromTitle}"</strong>
+            </p>
+
+            {moveParticipantsModal.error && (
+              <div
+                className="alert"
+                style={{
+                  padding: "10px 14px",
+                  marginBottom: "16px",
+                  fontSize: "12px",
+                  color: "#b91c1c",
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: "8px",
+                }}
+              >
+                {moveParticipantsModal.error}
+              </div>
+            )}
+
+            <form onSubmit={submitMoveParticipants}>
+              <div
+                style={{
+                  marginBottom: "18px",
+                  padding: "14px",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <label style={{ fontWeight: 600, fontSize: "12px", display: "block", marginBottom: "6px" }}>
+                  Pilih Jadwal Tujuan Pemindahan:
+                </label>
+                <select
+                  value={moveParticipantsModal.targetScheduleId}
+                  onChange={(e) =>
+                    setMoveParticipantsModal((m) => ({
+                      ...m,
+                      targetScheduleId: e.target.value,
+                      error: "",
+                    }))
+                  }
+                  style={{ marginBottom: "10px" }}
+                  required
+                >
+                  {schedules
+                    .filter((s) => s.id !== moveParticipantsModal.fromId)
+                    .map((sc) => {
+                      const remaining = (sc.sessions || []).reduce(
+                        (sum, s) =>
+                          sum + Number(s.remaining || Math.max(0, s.capacity - s.reserved)),
+                        0
+                      );
+                      return (
+                        <option key={sc.id} value={sc.id}>
+                          {sc.title} (Sisa Kuota: {remaining} kursi)
+                        </option>
+                      );
+                    })}
+                </select>
+
+                {(() => {
+                  const target = schedules.find(
+                    (s) => String(s.id) === String(moveParticipantsModal.targetScheduleId)
+                  );
+                  const targetRemaining = target
+                    ? (target.sessions || []).reduce(
+                        (sum, s) =>
+                          sum + Number(s.remaining || Math.max(0, s.capacity - s.reserved)),
+                        0
+                      )
+                    : 0;
+                  const isQuotaSufficient =
+                    targetRemaining >= moveParticipantsModal.reserved;
+                  return isQuotaSufficient ? (
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#15803d",
+                        background: "#f0fdf4",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #bbf7d0",
+                      }}
+                    >
+                      ✓ Kuota mencukupi: tersedia {targetRemaining} kursi untuk {moveParticipantsModal.reserved} peserta.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#b91c1c",
+                        background: "#fef2f2",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #fecaca",
+                      }}
+                    >
+                      ⚠️ Kuota tidak mencukupi: jadwal tujuan hanya memiliki {targetRemaining} kursi tersisa (dibutuhkan {moveParticipantsModal.reserved} kursi).
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div style={{ marginBottom: "22px" }}>
+                <label style={{ fontWeight: 600, fontSize: "12px", display: "block", marginBottom: "6px" }}>
+                  Masukkan PIN Admin (ADMIN_PIN) *
+                </label>
+                <input
+                  type="password"
+                  placeholder="Masukkan nilai ADMIN_PIN dari .env"
+                  value={moveParticipantsModal.pin}
+                  onChange={(e) =>
+                    setMoveParticipantsModal((m) => ({
+                      ...m,
+                      pin: e.target.value,
+                      error: "",
+                    }))
+                  }
+                  required
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setMoveParticipantsModal(null)}
+                  disabled={moveParticipantsBusy}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    moveParticipantsBusy ||
+                    !moveParticipantsModal.pin ||
+                    (() => {
+                      const target = schedules.find(
+                        (s) =>
+                          String(s.id) ===
+                          String(moveParticipantsModal.targetScheduleId)
+                      );
+                      const targetRemaining = target
+                        ? (target.sessions || []).reduce(
+                            (sum, s) =>
+                              sum +
+                              Number(
+                                s.remaining ||
+                                  Math.max(0, s.capacity - s.reserved)
+                              ),
+                            0
+                          )
+                        : 0;
+                      return targetRemaining < moveParticipantsModal.reserved;
+                    })()
+                  }
+                >
+                  {moveParticipantsBusy ? "Memindahkan…" : "Pindahkan Peserta ↗"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* KONTEN TAB */}
       {tab === "schedules" ? (
         <div style={{ display: "grid", gap: "25px" }}>
@@ -1747,38 +2333,50 @@ export default function Dashboard() {
                         </button>
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button
-                          className="secondary"
-                          onClick={() => startEditSchedule(sc)}
-                          style={{
-                            padding: "6px 12px",
-                            fontSize: "11px",
-                            marginRight: "6px",
-                          }}
-                        >
-                          Edit ✎
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={() => askDeleteSchedule(sc.id, sc.title)}
-                          disabled={Number(sc.total_reserved) > 0}
-                          title={
-                            Number(sc.total_reserved) > 0
-                              ? "Tidak dapat dihapus karena sudah ada peserta"
-                              : "Hapus jadwal"
-                          }
-                          style={{
-                            color:
-                              Number(sc.total_reserved) > 0
-                                ? "#a0aec0"
-                                : "#c53030",
-                            borderColor: "#e2e8f0",
-                            padding: "6px 12px",
-                            fontSize: "11px",
-                          }}
-                        >
-                          Hapus ✕
-                        </button>
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => startEditSchedule(sc)}
+                            style={{
+                              padding: "6px 12px",
+                              fontSize: "11px",
+                            }}
+                          >
+                            Edit ✎
+                          </button>
+                          {Number(sc.total_reserved) > 0 && schedules.length > 1 && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => startMoveParticipants(sc)}
+                              title="Pindahkan seluruh peserta ke jadwal lain"
+                              style={{
+                                color: "#2563eb",
+                                borderColor: "#bfdbfe",
+                                background: "#eff6ff",
+                                padding: "6px 12px",
+                                fontSize: "11px",
+                              }}
+                            >
+                              Pindah Peserta ⇄
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => askDeleteSchedule(sc)}
+                            title="Hapus jadwal"
+                            style={{
+                              color: "#c53030",
+                              borderColor: "#e2e8f0",
+                              padding: "6px 12px",
+                              fontSize: "11px",
+                            }}
+                          >
+                            Hapus ✕
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1942,6 +2540,31 @@ export default function Dashboard() {
         <>
           <div className="stats">
             <article>
+              {filterSchedule ? (
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#2563eb",
+                    marginBottom: "6px",
+                    lineHeight: 1.35,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                  title={
+                    schedules.find(
+                      (sc) => String(sc.id) === String(filterSchedule)
+                    )?.title
+                  }
+                >
+                  📅{" "}
+                  {schedules.find(
+                    (sc) => String(sc.id) === String(filterSchedule)
+                  )?.title || "Jadwal Terpilih"}
+                </div>
+              ) : null}
               <span>
                 {filterProfession
                   ? `Peserta ${filterProfession}`
@@ -1971,19 +2594,43 @@ export default function Dashboard() {
                   (s) => String(s.schedule_id) === String(filterSchedule)
                 )
               : d.sessions
-            ).map((s) => (
-              <article key={s.id}>
-                <span>
-                  {s.name} · {s.starts_at}–{s.ends_at} WITA
-                  {s.event_date ? ` (${formatEventDate(s.event_date)})` : ""}
-                </span>
-                <strong>
-                  {s.reserved} <small>/ {s.capacity}</small>
-                </strong>
-                <progress value={s.reserved} max={s.capacity} />
-                <small>{s.remaining} kursi tersisa</small>
-              </article>
-            ))}
+            ).map((s) => {
+              const schedTitle =
+                s.schedule_title ||
+                schedules.find((sc) => String(sc.id) === String(s.schedule_id))
+                  ?.title;
+              return (
+                <article key={s.id}>
+                  {schedTitle ? (
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        color: "#2563eb",
+                        marginBottom: "6px",
+                        lineHeight: 1.35,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                      title={schedTitle}
+                    >
+                      📅 {schedTitle}
+                    </div>
+                  ) : null}
+                  <span>
+                    {s.name} · {s.starts_at}–{s.ends_at} WITA
+                    {s.event_date ? ` (${formatEventDate(s.event_date)})` : ""}
+                  </span>
+                  <strong>
+                    {s.reserved} <small>/ {s.capacity}</small>
+                  </strong>
+                  <progress value={s.reserved} max={s.capacity} />
+                  <small>{s.remaining} kursi tersisa</small>
+                </article>
+              );
+            })}
           </div>
 
           <section className="card table-card">
@@ -2071,14 +2718,17 @@ export default function Dashboard() {
                   name="q"
                   type="search"
                   maxLength={150}
+                  defaultValue={new URLSearchParams(query).get("q") || ""}
                   placeholder={
                     filterProfession === "Mahasiswa"
                       ? "Cari nama, NIM, unit kerja, email, WhatsApp…"
+                      : filterProfession === "Pimpinan"
+                      ? "Cari nama, NIP, jabatan, unit kerja, email, WhatsApp…"
                       : "Cari nama, NIP, unit kerja, email, WhatsApp…"
                   }
                 />
               </label>
-              <label>
+              <label className="filter-profession">
                 Kategori Profesi
                 <select
                   name="profession"
@@ -2092,7 +2742,7 @@ export default function Dashboard() {
                   <option value="Mahasiswa">Mahasiswa</option>
                 </select>
               </label>
-              <label>
+              <label className="filter-schedule">
                 Filter Jadwal
                 <select
                   name="schedule"
@@ -2104,7 +2754,7 @@ export default function Dashboard() {
                 >
                   <option value="">Semua Jadwal</option>
                   {schedules.map((sc) => (
-                    <option key={sc.id} value={sc.id}>
+                    <option key={sc.id} value={sc.id} title={sc.title}>
                       {formatEventDate(sc.event_date)} —{" "}
                       {sc.title.length > 28
                         ? sc.title.slice(0, 28) + "…"
@@ -2113,7 +2763,7 @@ export default function Dashboard() {
                   ))}
                 </select>
               </label>
-              <label>
+              <label className="filter-session">
                 Filter Sesi
                 <select
                   name="session"
@@ -2130,7 +2780,7 @@ export default function Dashboard() {
                       )
                     : d.sessions
                   ).map((s) => (
-                    <option key={s.id} value={s.id}>
+                    <option key={s.id} value={s.id} title={s.schedule_title ? `${s.name} (${s.schedule_title})` : s.name}>
                       {s.name} ({s.starts_at}–{s.ends_at} WITA)
                       {!filterSchedule && s.schedule_title
                         ? ` · ${s.schedule_title.slice(0, 24)}…`
@@ -2139,15 +2789,24 @@ export default function Dashboard() {
                   ))}
                 </select>
               </label>
-              <button>Terapkan</button>
-              <a className="button secondary" href={"/api/export?" + query}>
-                Unduh Excel ↓
-              </a>
+              <div className="filter-actions">
+                <button type="submit">Terapkan</button>
+                <a className="button secondary" href={"/api/export?" + query}>
+                  Unduh Excel ↓
+                </a>
+              </div>
             </form>
-            <div className="table-meta">
-              {d.total} peserta {filterProfession ? `(${filterProfession})` : ""}{" "}
-              ditemukan · Halaman {d.page} dari{" "}
-              {Math.max(1, Math.ceil(d.total / 25))}
+            <div className="table-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                {d.total} peserta {filterProfession ? `(${filterProfession})` : ""}{" "}
+                ditemukan · Halaman {d.page} dari{" "}
+                {Math.max(1, Math.ceil(d.total / 25))}
+              </div>
+              {filterSchedule ? (
+                <div style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
+                  Jadwal: {schedules.find((sc) => String(sc.id) === String(filterSchedule))?.title || "Jadwal Terpilih"}
+                </div>
+              ) : null}
             </div>
             <div className="table-scroll">
               <table>
@@ -2161,6 +2820,7 @@ export default function Dashboard() {
                         ? "Nama / NIP"
                         : "Nama / Identitas (NIP/NIM)"}
                     </th>
+                    {filterProfession === "Pimpinan" && <th>Jabatan</th>}
                     <th>Unit Kerja</th>
                     <th>
                       {filterProfession === "Mahasiswa"
@@ -2194,7 +2854,7 @@ export default function Dashboard() {
                           >
                             {isMhs ? `NIM: ${p.nip}` : `NIP: ${p.nip}`}
                           </small>
-                          {p.position ? (
+                          {filterProfession !== "Pimpinan" && p.position ? (
                             <small
                               style={{
                                 color: "#1e3a8a",
@@ -2206,6 +2866,13 @@ export default function Dashboard() {
                             </small>
                           ) : null}
                         </td>
+                        {filterProfession === "Pimpinan" && (
+                          <td>
+                            <strong style={{ color: "#1e3a8a", display: "block" }}>
+                              {p.position || "-"}
+                            </strong>
+                          </td>
+                        )}
                         <td>{p.unit}</td>
                         <td>
                           <span className="pill" style={{ marginRight: "4px" }}>
@@ -2230,6 +2897,19 @@ export default function Dashboard() {
                           </small>
                         </td>
                         <td>
+                          {p.schedule_title ? (
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                color: "#2563eb",
+                                marginBottom: "2px",
+                              }}
+                              title={p.schedule_title}
+                            >
+                              {p.schedule_title}
+                            </div>
+                          ) : null}
                           <b>{p.session}</b>
                           <small style={{ color: "#64748b", display: "block" }}>
                             {p.event_date ? formatEventDate(p.event_date) : ""}
@@ -2298,7 +2978,7 @@ export default function Dashboard() {
                   })}
                   {!d.participants.length && (
                     <tr>
-                      <td colSpan={9} className="empty">
+                      <td colSpan={filterProfession === "Pimpinan" ? 10 : 9} className="empty">
                         {filterProfession
                           ? `Belum ada peserta ${filterProfession} yang sesuai dengan filter.`
                           : "Belum ada peserta yang sesuai."}
